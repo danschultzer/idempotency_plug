@@ -1,8 +1,8 @@
 defmodule IdempotencyPlug.MixProject do
   use Mix.Project
 
-  @source_url "https://github.com/danschultzer/test_server"
-  @version "0.1.1"
+  @source_url "https://github.com/danschultzer/idempotency_plug"
+  @version "0.1.2"
 
   def project do
     [
@@ -17,7 +17,7 @@ defmodule IdempotencyPlug.MixProject do
       package: package(),
 
       # Docs
-      name: "TestServer",
+      name: "IdempotencyPlug",
       docs: docs()
     ]
   end
