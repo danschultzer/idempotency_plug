@@ -9,12 +9,12 @@ defmodule IdempotencyPlug do
 
   ### Request ID
 
-  The value of the `Idempotency-Key` HTTP header is combined with an URI to
+  The value of the `Idempotency-Key` HTTP header is combined with a URI to
   produce a unique ID for the request. This will be used to store the response
-  for first-time request. The ID is used to fetch this response in all
+  for first-time requests. The ID is used to fetch this response in all
   subsequent requests.
 
-  A fingerprint of the request payload is generated, and used to ensure the ID
+  A fingerprint of the request payload is generated and used to ensure the ID
   is not reused with a different request payload.
 
   ### Error handling
@@ -25,8 +25,8 @@ defmodule IdempotencyPlug do
     - If the first-time request was unexpectedly terminated a
       `500 Internal Server` is returned.
 
-  Cached responses and halted first-time requests, returns an `Expires` header
-  in the response.
+  Cached responses and halted first-time requests, returning an `Expires`
+  header in the response.
 
   See `IdempotencyPlug.RequestTracker` for more on expiration.
 

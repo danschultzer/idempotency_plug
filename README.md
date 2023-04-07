@@ -7,7 +7,7 @@
 
 Plug that makes POST and PATCH requests idempotent using `Idempotency-Key` HTTP header.
 
-Follows the [IETF Idempotency-Key HTTP Header Field specifcation draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/).
+Follows the [IETF Idempotency-Key HTTP Header Field specification draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/).
 
 <!-- MDOC !-->
 
@@ -61,9 +61,9 @@ All POST and PATCH requests will now be idempotent using the `Idempotency-Key` H
 
 ### Persisted store
 
-The ETS store is not persisted, so it's not production ready. Instead let's change the store to use Ecto.
+The ETS store is not persisted, so it's not production ready. Instead, let's change the store to use Ecto.
 
-First run `mix idempotency_plug.ecto.gen.migration`.
+First, run `mix idempotency_plug.ecto.gen.migration`.
 
 Now update the configuration for the request tracker:
 
@@ -108,7 +108,7 @@ plug IdempotencyPlug,
 
 ## Scope `Idempotency-Key`
 
-If you authenticate an user in your API you will need to scope the `Idempotency-Key` to the authenticated user:
+If you authenticate a user in your API you will need to scope the `Idempotency-Key` to the authenticated user:
 
 ```elixir
 defmodule MyAppWeb.IdempotencyPlugHandler do

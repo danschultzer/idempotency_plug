@@ -1,15 +1,14 @@
 defmodule IdempotencyPlug.RequestTracker do
   @moduledoc """
-  GenServer that tracks processes to ensure requests, at most, are processed
+  A GenServer that tracks processes to ensure requests, at most, are processed
   once.
 
   ### Storage
 
   First-time tracked request will store `{:processing, {node, pid}}` request
-  state with an expiration date for the the provided request ID. Once the
-  request has completed, `put_response/3` must be called to update the cached
-  response. The response will be stored as `{:ok, data}` with an expiration
-  date.
+  state with an expiration date for the provided request ID. Once the request
+  has completed, `put_response/3` must be called to update the cached response.
+  The response will be stored as `{:ok, data}` with an expiration date.
 
   The process for a tracked request may halt unexpectedly (e.g. due to raised
   exception). This module will track the terminated process and store the value as
@@ -19,24 +18,24 @@ defmodule IdempotencyPlug.RequestTracker do
 
   ### Lookup
 
-  For subsequent requests the state of the first-time tracked request will be
+  For subsequent requests, the state of the first-time tracked request will be
   returned in the format of `{:cache, {:ok, data}, expires_at}`.
 
   If the request payload fingerprint differs,
   `{:mismatch, {:fingerprint, fingerprint}, expires_at}` is returned.
 
-  If first-time request hasn't yet completed,
+  If first-time request has not yet completed,
   `{:processing, {node, pid}, expires_at}` is returned.
 
-  If the request unexpectedly terminated
+  If the request unexpectedly terminated,
   `{:cache, {:halted, reason}, expires_at}` is returned.
 
   ## Options
 
-    * `:cache_ttl` - the TTL in miliseconds for any objects in the cache store.
-      Defaults to 24 hours.
+    * `:cache_ttl` - the TTL in milliseconds for any objects in the cache
+      store. Defaults to 24 hours.
 
-    * `:prune` - the interval in miliseconds to prune the cache store for
+    * `:prune` - the interval in milliseconds to prune the cache store for
       expired objects. Defaults to 60 seconds.
 
     * `:store` - the cache store module to use to store the cache objects.
@@ -83,7 +82,7 @@ defmodule IdempotencyPlug.RequestTracker do
   @doc """
   Tracks a request ID.
 
-  This function will return `{:init, id, expires_at}` for first-time request.
+  This function will return `{:init, id, expires_at}` for first-time requests.
   Subsequent requests will return the request state. If the request payload
   fingerprint differs from what was stored, an error is returned.
   """
