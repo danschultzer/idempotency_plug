@@ -24,14 +24,15 @@ defmodule Mix.Tasks.IdempotencyPlug.Ecto.Gen.Migration do
     else
       change =
         """
-          create table(:idempotency_plug_requests, primary_key: false) do
-            add :id, :string, primary_key: true
-            add :fingerprint, :string, null: false
-            add :data, :binary, null: false
-            add :expires_at, :utc_datetime_usec, null: false
+            # Used by IdempotencyPlug.EctoStore
+            create table(:idempotency_plug_requests, primary_key: false) do
+              add :id, :string, primary_key: true
+              add :fingerprint, :string, null: false
+              add :data, :binary, null: false
+              add :expires_at, :utc_datetime_usec, null: false
 
-            timestamps()
-          end
+              timestamps()
+            end
         """
 
       Migration.run(args ++ ["--change", change])

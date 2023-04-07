@@ -126,6 +126,24 @@ defmodule MyAppWeb.IdempotencyPlugHandler do
 end
 ```
 
+## Phoenix tests
+
+For your controller tests you may want to add this helper to set up the idempotency key:
+
+```elixir
+def setup_with_idempotency_key(%{conn: conn}) do
+  conn = Plug.Conn.put_req_header(conn, "idempotency-key", Ecto.UUID.bingenerate())
+
+  {:ok, conn: conn}
+end
+```
+
+```elixir
+setup :setup_with_idempotency_key
+```
+
+This ensures that all the tests succeed by generating a UUID for all requests.
+
 <!-- MDOC !-->
 
 ## LICENSE
