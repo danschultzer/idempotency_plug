@@ -10,12 +10,12 @@ defmodule IdempotencyPlug do
   ### Request ID
 
   The value of the `Idempotency-Key` HTTP header is combined with a URI to
-  produce a unique ID for the request. This will be used to store the response
-  for first-time requests. The ID is used to fetch this response in all
-  subsequent requests.
+  produce a unique sha256 hash for the request. This will be used to store the
+  response for first-time requests. The ID is used to fetch this response in
+  all subsequent requests.
 
-  A fingerprint of the request payload is generated and used to ensure the ID
-  is not reused with a different request payload.
+  A sha256 checksum of the request payload is generated and used to ensure the
+  ID is not reused with a different request payload.
 
   ### Error handling
 
@@ -104,21 +104,19 @@ defmodule IdempotencyPlug do
     handler = Keyword.fetch!(opts, :handler)
     id = handler.idempotent_id(conn, id)
 
-    sha256_checksum("#{inspect id}#{inspect conn.path_info}")
+    sha256_checksum({id, conn.path_info})
   end
 
-  defp sha256_checksum(id) do
+  defp sha256_checksum(term) do
     :sha256
-    |> :crypto.hash(id)
+    |> :crypto.hash(:erlang.term_to_binary(term))
     |> Base.encode16()
     |> String.downcase()
   end
 
   defp gen_request_payload_fingerprint(conn) do
     # Maps are not guaranteed to be ordered so we'll sort it here
-    sorted_params = conn.params |> Map.to_list() |> Enum.sort()
-
-    sha256_checksum(inspect sorted_params)
+    sha256_checksum(conn.params |> Map.to_list() |> Enum.sort())
   end
 
   defp update_response_before_send(conn, id, opts) do
@@ -159,5 +157,10 @@ defmodule IdempotencyPlug do
       |> Calendar.strftime("%a, %-d %b %Y %X GMT")
 
     Conn.put_resp_header(conn, "expires", expires)
+  end
+
+  if Mix.env == :test do
+    # This is only included in tests
+    def __sha256_checksum__(term), do: sha256_checksum(term)
   end
 end

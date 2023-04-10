@@ -130,7 +130,7 @@ defmodule IdempotencyPlugTest do
     @behaviour IdempotencyPlug.Handler
 
     @impl true
-    def idempotent_id(_conn, id), do: "custom:#{id}"
+    def idempotent_id(conn, id), do: {conn.assigns.custom, id}
 
     @impl true
     def resp_error(conn, _error) do
@@ -139,12 +139,27 @@ defmodule IdempotencyPlugTest do
   end
 
   test "with custom handler", %{conn: conn, tracker: tracker} do
-    resp_conn = run_plug(conn, tracker, handler: TestHandler)
+    resp_conn =
+      conn
+      |> assign(:custom, "a")
+      |> run_plug(tracker, handler: TestHandler)
 
     refute resp_conn.halted
     assert resp_conn.status == 200
 
-    resp_conn = run_plug(%{conn | params: %{"other_key" => "1"}}, tracker, handler: TestHandler)
+    resp_conn =
+      conn
+      |> assign(:custom, "b")
+      |> run_plug(tracker, handler: TestHandler)
+
+    refute resp_conn.halted
+    assert resp_conn.status == 200
+
+    resp_conn =
+      conn
+      |> assign(:custom, "a")
+      |> Map.put(:params,  %{"other_key" => "1"})
+      |> run_plug(tracker, handler: TestHandler)
 
     assert resp_conn.halted
     assert resp_conn.status == 418

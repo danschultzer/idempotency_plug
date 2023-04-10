@@ -28,7 +28,7 @@ defmodule IdempotencyPlug.Handler do
   @type request_id :: binary()
   @type error :: :multiple_headers | :no_headers | :concurrent_request | :fingerprint_mismatch | :halted
 
-  @callback idempotent_id(Conn.t(), request_id()) :: binary()
+  @callback idempotent_id(Conn.t(), request_id()) :: term()
   @callback resp_error(Conn.t(), error()) :: Conn.t()
 
   @doc """
