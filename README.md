@@ -116,7 +116,7 @@ defmodule MyAppWeb.IdempotencyPlugHandler do
 
   @impl true
   def idempotent_id(conn, id) do
-    "#{conn.assigns.current_user.id}:#{id}"
+    {conn.assigns.current_user.id, id}
   end
 
   @impl true

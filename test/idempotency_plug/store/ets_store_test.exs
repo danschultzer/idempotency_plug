@@ -1,12 +1,16 @@
 defmodule IdempotencyPlug.ETSStoreTest do
   use ExUnit.Case
 
+  import IdempotencyPlug, only: [__sha256_checksum__: 1]
+
   alias IdempotencyPlug.ETSStore
 
   @options [table: __MODULE__]
-  @request_id :sha256 |> :crypto.hash("key") |> Base.encode16() |> String.downcase()
+  @request_id __sha256_checksum__({"key", ["/"]})
+  @other_request_id __sha256_checksum__({"other-key", ["/"]})
   @data {:ok, %{resp_body: "OK", resp_headers: [], status: 200}}
   @updated_data {:halted, :terminated}
+  @fingerprint __sha256_checksum__(%{"a" => 1})
 
   test "setup" do
     assert ETSStore.setup(@options) == :ok
@@ -21,16 +25,16 @@ defmodule IdempotencyPlug.ETSStoreTest do
     assert ETSStore.lookup(@request_id, @options) == :not_found
 
     expires_at = DateTime.utc_now()
-    assert ETSStore.insert(@request_id, @data, "fingerprint", expires_at, @options) == :ok
-    assert ETSStore.insert(@request_id, @data, "fingerprint", expires_at, @options) == {:error, "key #{@request_id} already exists in store"}
+    assert ETSStore.insert(@request_id, @data, @fingerprint, expires_at, @options) == :ok
+    assert ETSStore.insert(@request_id, @data, @fingerprint, expires_at, @options) == {:error, "key #{@request_id} already exists in store"}
 
-    assert ETSStore.lookup(@request_id, @options) == {@data, "fingerprint", expires_at}
+    assert ETSStore.lookup(@request_id, @options) == {@data, @fingerprint, expires_at}
 
     updated_expires_at = DateTime.utc_now()
-    assert ETSStore.update("#{@request_id}-other", @updated_data, updated_expires_at, @options) == {:error, "key #{@request_id}-other not found in store"}
+    assert ETSStore.update(@other_request_id, @updated_data, updated_expires_at, @options) == {:error, "key #{@other_request_id} not found in store"}
     assert ETSStore.update(@request_id, @updated_data, updated_expires_at, @options) == :ok
 
-    assert ETSStore.lookup(@request_id, @options) == {@updated_data, "fingerprint", updated_expires_at}
+    assert ETSStore.lookup(@request_id, @options) == {@updated_data, @fingerprint, updated_expires_at}
   end
 
   test "prunes" do
@@ -39,12 +43,12 @@ defmodule IdempotencyPlug.ETSStoreTest do
     expired = DateTime.add(DateTime.utc_now(), -1, :second)
     not_expired = DateTime.add(DateTime.utc_now(), 1, :second)
 
-    assert ETSStore.insert("#{@request_id}-expired", @data, "fingerprint", expired, @options) == :ok
-    assert ETSStore.insert("#{@request_id}-not-expired", @data, "fingerprint", not_expired, @options) == :ok
+    assert ETSStore.insert(@request_id, @data, @fingerprint, expired, @options) == :ok
+    assert ETSStore.insert(@other_request_id, @data, @fingerprint, not_expired, @options) == :ok
 
     assert ETSStore.prune(@options) == :ok
 
-    assert ETSStore.lookup("#{@request_id}-expired", @options) == :not_found
-    refute ETSStore.lookup("#{@request_id}-not-expired", @options) == :not_found
+    assert ETSStore.lookup(@request_id, @options) == :not_found
+    refute ETSStore.lookup(@other_request_id, @options) == :not_found
   end
 end
