@@ -67,6 +67,13 @@ defmodule IdempotencyPlug.MixProject do
       ],
       skip_undefined_reference_warnings_on: [
         "CHANGELOG.md"
+      ],
+      groups_for_modules: [
+        "Cache Store": [
+          IdempotencyPlug.EctoStore,
+          IdempotencyPlug.ETSStore,
+          IdempotencyPlug.Store
+        ]
       ]
     ]
   end

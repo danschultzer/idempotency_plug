@@ -73,56 +73,34 @@ Now update the configuration for the request tracker:
 
 You can also implement your own idempotent request store by using the behaviour in `IdempotencyPlug.Store`.
 
-## Customize response
+## Scope `Idempotency-Key`
 
-The plug handling can be customized by using the `IdempotencyPlug.Handler` behaviour:
-
-```elixir
-defmodule MyAppWeb.IdempotencyPlugHandler do
-  @behaviour IdempotencyPlug.Handler
-
-  import Phoenix.Controller
-  import Plug.Conn
-
-  @impl true
-  def idempotent_id(conn, id) do
-    IdempotencyPlug.Handler.idempotent_id(conn, id)
-  end
-
-  @impl true
-  def resp_error(conn, error) do
-    conn
-    |> put_status(IdempotencyPlug.Handler.status(error))
-    |> json(%{error: IdempotencyPlug.Handler.message(error)})
-  end
-end
-```
-
-Remember to update the plug opts:
+If you are authenticating users then you must scope the `Idempotency-Key` to the authenticated user:
 
 ```elixir
 plug IdempotencyPlug,
   tracker: MyAppWeb.RequestTracker,
-  handler: MyAppWeb.IdempotencyPlugHandler
+  idempotency_key: {__MODULE__, :scope_idempotency_key}
+
+def scope_idempotency_key(conn, id), do: {conn.assigns.current_user.id, id}
 ```
 
-## Scope `Idempotency-Key`
+Otherwise you may have a security vulnerability (or conflict) where any user can access another users cached responses when requests are identical.
 
-If you authenticate a user in your API you will need to scope the `Idempotency-Key` to the authenticated user:
+## Customize error response
+
+By default, errors are raised and handled by the `Plug.Exception` protocol, but you can handle the errors setting the `:with` option:
 
 ```elixir
-defmodule MyAppWeb.IdempotencyPlugHandler do
-  @behaviour IdempotencyPlug.Handler
+plug IdempotencyPlug,
+  tracker: MyAppWeb.RequestTracker,
+  with: {__MODULE__, :handle_error}
 
-  @impl true
-  def idempotent_id(conn, id) do
-    {conn.assigns.current_user.id, id}
-  end
-
-  @impl true
-  def resp_error(conn, error) do
-    IdempotencyPlug.Handler.resp_error(conn, error)
-  end
+def handle_error(conn, error) do
+  conn
+  |> put_status(Plug.Expetion.Handler.status(error))
+  |> json(%{error: error.message})
+  |> halt()
 end
 ```
 
