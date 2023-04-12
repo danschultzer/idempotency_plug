@@ -1,7 +1,41 @@
-## v0.1.3 (TBA)
+## v0.2.0 (TBA)
 
-- Switched to `:erlang.term_to_binary/1` for sha256 checksum encoding
-- The `idempotent_id/2` handler callback may now return any erlang term
+**This is a breaking release.**
+
+If you have been using the Idempotency.Handler behaviour, change your plug to this:
+
+```elixir
+plug IdempotencyPlug,
+  tracker: MyAppWeb.RequestTracker,
+  idempotency_key: {MyAppWeb.IdempotencyPlugHandler, :scope_idempotency_key},
+  with: {MyAppWeb.IdempotencyPlugHandler, :handle_error}
+```
+
+And change your handler module to this:
+
+```elixir
+defmodule MyAppWeb.IdempotencyPlugHandler do
+  import Phoenix.Controller
+  import Plug.Conn
+
+  def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
+
+  def handle_error(conn, error) do
+    conn
+    |> put_status(Plug.Exception.status(error))
+    |> json(%{error: error.message})
+    |> halt()
+  end
+end
+```
+
+### Changes
+
+- IdempotencyPlug.Handler removed
+- IdempotencyPlug raises errors by default
+- IdempotencyPlug now accepts `:idempotency_key`, `:request_payload`, `:hash`, and `:with` options
+- IdempotencyPlug now requires `:tracker` option
+- SHA256 hashing now accepts Erlang terms instead of just binary
 
 ## v0.1.2 (2023-04-07)
 

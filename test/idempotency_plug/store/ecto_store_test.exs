@@ -1,7 +1,7 @@
 defmodule IdempotencyPlug.EctoStoreTest do
   use ExUnit.Case
 
-  import IdempotencyPlug, only: [__sha256_checksum__: 1]
+  import IdempotencyPlug, only: [sha256_hash: 2]
   import ExUnit.CaptureIO
 
   alias IdempotencyPlug.EctoStore
@@ -16,11 +16,11 @@ defmodule IdempotencyPlug.EctoStoreTest do
   setup :setup_ecto_sandbox
 
   @options [repo: TestRepo]
-  @request_id __sha256_checksum__({"key", ["/"]})
-  @other_request_id __sha256_checksum__({"other-key", ["/"]})
+  @request_id sha256_hash(:idempotency_key, {"key", ["/"]})
+  @other_request_id sha256_hash(:idempotency_key, {"other-key", ["/"]})
   @data {:ok, %{resp_body: "OK", resp_headers: [], status: 200}}
   @updated_data {:halted, :terminated}
-  @fingerprint __sha256_checksum__(%{"a" => 1})
+  @fingerprint sha256_hash(:request_payload, %{"a" => 1})
 
   test "setup" do
     assert EctoStore.setup(@options) == :ok
