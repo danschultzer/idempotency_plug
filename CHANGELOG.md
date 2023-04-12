@@ -1,4 +1,4 @@
-## v0.2.0 (TBA)
+## v0.2.0 (2023-04-12)
 
 **This is a breaking release.**
 
