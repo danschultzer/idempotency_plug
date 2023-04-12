@@ -245,9 +245,9 @@ defmodule IdempotencyPlug do
   end
 
   @doc """
-  Returns the ID as-is.
+  Returns the key as-is.
   """
-  def idempotency_key(_conn, id), do: id
+  def idempotency_key(_conn, key), do: key
 
   defp hash_idempotency_key(conn, key, opts) do
     key = {key, conn.path_info}
@@ -302,11 +302,11 @@ defmodule IdempotencyPlug do
     |> String.downcase()
   end
 
-  defp update_response_before_send(conn, id, opts) do
+  defp update_response_before_send(conn, key, opts) do
     tracker = Keyword.fetch!(opts, :tracker)
 
     Conn.register_before_send(conn, fn conn ->
-      case RequestTracker.put_response(tracker, id, conn_to_response(conn)) do
+      case RequestTracker.put_response(tracker, key, conn_to_response(conn)) do
         {:ok, expires} -> put_expires_header(conn, expires)
         {:error, error} -> raise "failed to put response in cache store, got: #{inspect error}"
       end

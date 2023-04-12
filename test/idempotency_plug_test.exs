@@ -160,7 +160,7 @@ defmodule IdempotencyPlugTest do
     end
   end
 
-  def scope_idempotency_key(conn, id, :arg1), do: {conn.assigns.custom, id}
+  def scope_idempotency_key(conn, key, :arg1), do: {conn.assigns.custom, key}
 
   test "with `:idempotency_key`", %{conn: conn, tracker: tracker} do
     opts = [idempotency_key: {__MODULE__, :scope_idempotency_key, [:arg1]}]

@@ -82,7 +82,7 @@ defmodule IdempotencyPlug.RequestTracker do
   @doc """
   Tracks a request ID.
 
-  This function will return `{:init, id, expires_at}` for first-time requests.
+  This function will return `{:init, key, expires_at}` for first-time requests.
   Subsequent requests will return the request state. If the request payload
   fingerprint differs from what was stored, an error is returned.
   """

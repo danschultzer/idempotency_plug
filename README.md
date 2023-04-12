@@ -82,7 +82,7 @@ plug IdempotencyPlug,
   tracker: MyAppWeb.RequestTracker,
   idempotency_key: {__MODULE__, :scope_idempotency_key}
 
-def scope_idempotency_key(conn, id), do: {conn.assigns.current_user.id, id}
+def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
 ```
 
 Otherwise you may have a security vulnerability (or conflict) where any user can access another users cached responses when requests are identical.

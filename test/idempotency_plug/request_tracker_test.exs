@@ -13,10 +13,10 @@ defmodule IdempotencyPlug.RequestTrackerTest do
   test "with no cached response", %{pid: pid} do
     expires_after = DateTime.add(DateTime.utc_now(), 24, :hour)
 
-    assert {:init, id, expires} = RequestTracker.track(pid, "no-cache", "fingerprint")
+    assert {:init, key, expires} = RequestTracker.track(pid, "no-cache", "fingerprint")
     assert DateTime.compare(expires, expires_after) != :lt
 
-    assert {:ok, expires} = RequestTracker.put_response(pid, id, "OK")
+    assert {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
     assert DateTime.compare(expires, expires_after) != :lt
   end
 
@@ -25,7 +25,7 @@ defmodule IdempotencyPlug.RequestTrackerTest do
 
     task =
       Task.async(fn ->
-        {:init, id, expires} = RequestTracker.track(pid, "concurrent-request", "fingerprint")
+        {:init, key, expires} = RequestTracker.track(pid, "concurrent-request", "fingerprint")
 
         send(test_pid, {:expires, expires})
 
@@ -33,7 +33,7 @@ defmodule IdempotencyPlug.RequestTrackerTest do
           :continue -> :ok
         end
 
-        {:ok, expires} = RequestTracker.put_response(pid, id, "OK")
+        {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
 
         send(test_pid, {:expires, expires})
       end)
@@ -52,15 +52,15 @@ defmodule IdempotencyPlug.RequestTrackerTest do
   end
 
   test "with fingerprint mismatch", %{pid: pid} do
-    {:init, id, _expires} = RequestTracker.track(pid, "cached-fingerprint", "fingerprint")
-    {:ok, expires} = RequestTracker.put_response(pid, id, "OK")
+    {:init, key, _expires} = RequestTracker.track(pid, "cached-fingerprint", "fingerprint")
+    {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
 
     assert {:mismatch, {:fingerprint, "fingerprint"}, ^expires} = RequestTracker.track(pid, "cached-fingerprint", "other-fingerprint")
   end
 
   test "with cached response", %{pid: pid} do
-    {:init, id, _expires} = RequestTracker.track(pid, "cached-response", "fingerprint")
-    {:ok, expires} = RequestTracker.put_response(pid, id, "OK")
+    {:init, key, _expires} = RequestTracker.track(pid, "cached-response", "fingerprint")
+    {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
 
     assert {:cache, {:ok, "OK"}, ^expires} = RequestTracker.track(pid, "cached-response", "fingerprint")
   end
