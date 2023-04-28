@@ -34,8 +34,8 @@ defmodule IdempotencyPlug.MixProject do
     [
       {:plug, "~> 1.14"},
       {:jason, "~> 1.2"},
-      {:ecto, "~> 3.9.2", optional: true},
-      {:ecto_sql, "~> 3.9.2", optional: true},
+      {:ecto, "~> 3.9", optional: true},
+      {:ecto_sql, "~> 3.9", optional: true},
 
       {:postgrex, ">= 0.0.0", only: [:test]},
       {:credo, ">= 0.0.0", only: [:dev, :test]},
