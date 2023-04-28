@@ -1,3 +1,7 @@
+## v0.2.1 (TBA)
+
+Relaxed dependency requirements for `ecto` and `ecto_sql`.
+
 ## v0.2.0 (2023-04-12)
 
 **This is a breaking release.**
