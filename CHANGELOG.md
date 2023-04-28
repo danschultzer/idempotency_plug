@@ -1,4 +1,4 @@
-## v0.2.1 (TBA)
+## v0.2.1 (2023-04-28)
 
 Relaxed dependency requirements for `ecto` and `ecto_sql`.
 
