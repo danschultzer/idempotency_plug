@@ -27,8 +27,8 @@ jobs:
     strategy:
       matrix:
         version:
-          - elixir: 1.14
-            otp: 25.0
+          - elixir: 1.15
+            otp: 26.0
             deploy: true
     name: OTP ${{matrix.version.otp}} / Elixir ${{matrix.version.elixir}}
     steps:
