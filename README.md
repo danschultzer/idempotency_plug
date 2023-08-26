@@ -25,7 +25,7 @@ end
 
 ## Usage
 
-First add the request tracker to your supervision tree:
+First, add the request tracker to your supervision tree:
 
 ```elixir
 defmodule MyApp.Application do
@@ -85,11 +85,11 @@ plug IdempotencyPlug,
 def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
 ```
 
-Otherwise you may have a security vulnerability (or conflict) where any user can access another users cached responses when requests are identical.
+Otherwise, you may have a security vulnerability (or conflict) where any user can access another user's cached responses when requests are identical.
 
 ## Customize error response
 
-By default, errors are raised and handled by the `Plug.Exception` protocol, but you can handle the errors setting the `:with` option:
+By default, errors are raised and handled by the `Plug.Exception` protocol, but you can handle the errors by setting the `:with` option:
 
 ```elixir
 plug IdempotencyPlug,
@@ -98,7 +98,7 @@ plug IdempotencyPlug,
 
 def handle_error(conn, error) do
   conn
-  |> put_status(Plug.Expetion.Handler.status(error))
+  |> put_status(Plug.Exception.Handler.status(error))
   |> json(%{error: error.message})
   |> halt()
 end
@@ -106,7 +106,7 @@ end
 
 ## Phoenix tests
 
-For your controller tests you may want to add this helper to set up the idempotency key:
+For your controller tests, you may want to add this helper to set up the idempotency key:
 
 ```elixir
 def setup_with_idempotency_key(%{conn: conn}) do
