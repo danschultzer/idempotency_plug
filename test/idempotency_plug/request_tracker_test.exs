@@ -40,14 +40,16 @@ defmodule IdempotencyPlug.RequestTrackerTest do
 
     receive do
       {:expires, expires} ->
-        assert {:processing, _node_caller, ^expires} = RequestTracker.track(pid, "concurrent-request", "fingerprint")
+        assert {:processing, _node_caller, ^expires} =
+                 RequestTracker.track(pid, "concurrent-request", "fingerprint")
     end
 
     send(task.pid, :continue)
 
     receive do
       {:expires, expires} ->
-        assert {:cache, {:ok, "OK"}, ^expires} = RequestTracker.track(pid, "concurrent-request", "fingerprint")
+        assert {:cache, {:ok, "OK"}, ^expires} =
+                 RequestTracker.track(pid, "concurrent-request", "fingerprint")
     end
   end
 
@@ -55,14 +57,16 @@ defmodule IdempotencyPlug.RequestTrackerTest do
     {:init, key, _expires} = RequestTracker.track(pid, "cached-fingerprint", "fingerprint")
     {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
 
-    assert {:mismatch, {:fingerprint, "fingerprint"}, ^expires} = RequestTracker.track(pid, "cached-fingerprint", "other-fingerprint")
+    assert {:mismatch, {:fingerprint, "fingerprint"}, ^expires} =
+             RequestTracker.track(pid, "cached-fingerprint", "other-fingerprint")
   end
 
   test "with cached response", %{pid: pid} do
     {:init, key, _expires} = RequestTracker.track(pid, "cached-response", "fingerprint")
     {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
 
-    assert {:cache, {:ok, "OK"}, ^expires} = RequestTracker.track(pid, "cached-response", "fingerprint")
+    assert {:cache, {:ok, "OK"}, ^expires} =
+             RequestTracker.track(pid, "cached-response", "fingerprint")
   end
 
   @tag capture_log: true
@@ -78,18 +82,21 @@ defmodule IdempotencyPlug.RequestTrackerTest do
     {{%RuntimeError{message: "oops"}, _}, _} = catch_exit(Task.await(task))
 
     assert {:cache, {:halted, {%RuntimeError{message: "oops"}, _}}, _expires} =
-      RequestTracker.track(pid, "halted-request", "fingerprint")
+             RequestTracker.track(pid, "halted-request", "fingerprint")
   end
 
   test "when no tracked request", %{pid: pid} do
-    assert {:error, "key no-request not found in store"} = RequestTracker.put_response(pid, "no-request", "OK")
+    assert {:error, "key no-request not found in store"} =
+             RequestTracker.put_response(pid, "no-request", "OK")
   end
 
   @tag options: [prune: 5, cache_ttl: 10]
   test "prunes", %{pid: pid} do
     {:init, _id, _expires} = RequestTracker.track(pid, "prune", "fingerprint")
 
-    assert {:processing, _node_caller, _expires} = RequestTracker.track(pid, "prune", "fingerprint")
+    assert {:processing, _node_caller, _expires} =
+             RequestTracker.track(pid, "prune", "fingerprint")
+
     :timer.sleep(20)
     assert {:init, _id, _expires} = RequestTracker.track(pid, "prune", "fingerprint")
   end

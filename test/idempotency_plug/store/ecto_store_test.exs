@@ -26,7 +26,7 @@ defmodule IdempotencyPlug.EctoStoreTest do
     assert EctoStore.setup(@options) == :ok
 
     assert EctoStore.setup([]) ==
-      {:error, ":repo must be specified in options for IdempotencyPlug.EctoStore"}
+             {:error, ":repo must be specified in options for IdempotencyPlug.EctoStore"}
   end
 
   test "inserts, looks up, and updates" do
@@ -36,16 +36,21 @@ defmodule IdempotencyPlug.EctoStoreTest do
 
     expires_at = DateTime.utc_now()
     assert EctoStore.insert(@request_id, @data, @fingerprint, expires_at, @options) == :ok
-    assert {:error, _changeset} = EctoStore.insert(@request_id, @data, @fingerprint, expires_at, @options)
+
+    assert {:error, _changeset} =
+             EctoStore.insert(@request_id, @data, @fingerprint, expires_at, @options)
 
     assert EctoStore.lookup(@request_id, @options) == {@data, @fingerprint, expires_at}
 
     updated_expires_at = DateTime.utc_now()
-    assert EctoStore.update(@other_request_id, @updated_data, updated_expires_at, @options) == {:error, "key #{@other_request_id} not found in store"}
+
+    assert EctoStore.update(@other_request_id, @updated_data, updated_expires_at, @options) ==
+             {:error, "key #{@other_request_id} not found in store"}
 
     assert EctoStore.update(@request_id, @updated_data, updated_expires_at, @options) == :ok
 
-    assert EctoStore.lookup(@request_id, @options) == {@updated_data, @fingerprint, updated_expires_at}
+    assert EctoStore.lookup(@request_id, @options) ==
+             {@updated_data, @fingerprint, updated_expires_at}
   end
 
   test "prunes" do
@@ -75,20 +80,25 @@ defmodule IdempotencyPlug.EctoStoreTest do
       pool: Ecto.Adapters.SQL.Sandbox,
       priv: "priv/repo",
       log: false,
-      url: System.get_env("POSTGRES_URL"))
+      url: System.get_env("POSTGRES_URL")
+    )
 
     capture_io(fn ->
       Mix.Task.run("idempotency_plug.ecto.gen.migration", ["-r", inspect(TestRepo)])
     end)
 
-    TestRepo.__adapter__.storage_down(TestRepo.config())
-    :ok = TestRepo.__adapter__.storage_up(TestRepo.config())
+    TestRepo.__adapter__().storage_down(TestRepo.config())
+    :ok = TestRepo.__adapter__().storage_up(TestRepo.config())
 
     start_supervised!(TestRepo)
 
     migrations_path = Path.join("priv", "repo")
 
-    {:ok, _, _} = Ecto.Migrator.with_repo(TestRepo, &Ecto.Migrator.run(&1, migrations_path, :up, all: true, log: false))
+    {:ok, _, _} =
+      Ecto.Migrator.with_repo(
+        TestRepo,
+        &Ecto.Migrator.run(&1, migrations_path, :up, all: true, log: false)
+      )
 
     # start_supervised!(TestRepo)
     Ecto.Adapters.SQL.Sandbox.mode(TestRepo, :manual)

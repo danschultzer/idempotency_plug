@@ -87,12 +87,12 @@ defmodule IdempotencyPlug.RequestTracker do
   fingerprint differs from what was stored, an error is returned.
   """
   @spec track(atom() | pid(), binary(), binary()) ::
-    {:error, term()} |
-    {:init, binary(), DateTime.t()} |
-    {:mismatch, {:fingerprint, binary()}, DateTime.t()} |
-    {:processing, {atom(), pid()}, DateTime.t()} |
-    {:cache, {:ok, any()}, DateTime.t()} |
-    {:cache, {:halted, term()},  DateTime.t()}
+          {:error, term()}
+          | {:init, binary(), DateTime.t()}
+          | {:mismatch, {:fingerprint, binary()}, DateTime.t()}
+          | {:processing, {atom(), pid()}, DateTime.t()}
+          | {:cache, {:ok, any()}, DateTime.t()}
+          | {:cache, {:halted, term()}, DateTime.t()}
   def track(name_or_pid, request_id, fingerprint) do
     GenServer.call(name_or_pid, {:track, request_id, fingerprint})
   end
@@ -162,7 +162,7 @@ defmodule IdempotencyPlug.RequestTracker do
 
   def handle_call({:put_response, request_id, response}, _from, state) do
     {store, store_opts} = fetch_store(state.options)
-    {_finished, state} = pop_monitored(state, &elem(&1, 0) == request_id)
+    {_finished, state} = pop_monitored(state, &(elem(&1, 0) == request_id))
     data = {:ok, response}
     expires_at = expires_at(state.options)
 
@@ -189,7 +189,7 @@ defmodule IdempotencyPlug.RequestTracker do
   @impl true
   def handle_info({:DOWN, _ref, :process, pid, reason}, state) do
     {store, store_opts} = fetch_store(state.options)
-    {finished, state} = pop_monitored(state, &elem(&1, 1) == pid)
+    {finished, state} = pop_monitored(state, &(elem(&1, 1) == pid))
     data = {:halted, reason}
     expires_at = expires_at(state.options)
 

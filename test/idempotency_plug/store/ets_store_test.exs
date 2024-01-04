@@ -16,7 +16,7 @@ defmodule IdempotencyPlug.ETSStoreTest do
     assert ETSStore.setup(@options) == :ok
 
     assert ETSStore.setup([]) ==
-      {:error, ":table must be specified in options for IdempotencyPlug.ETSStore"}
+             {:error, ":table must be specified in options for IdempotencyPlug.ETSStore"}
   end
 
   test "inserts, looks up, and updates" do
@@ -26,15 +26,21 @@ defmodule IdempotencyPlug.ETSStoreTest do
 
     expires_at = DateTime.utc_now()
     assert ETSStore.insert(@request_id, @data, @fingerprint, expires_at, @options) == :ok
-    assert ETSStore.insert(@request_id, @data, @fingerprint, expires_at, @options) == {:error, "key #{@request_id} already exists in store"}
+
+    assert ETSStore.insert(@request_id, @data, @fingerprint, expires_at, @options) ==
+             {:error, "key #{@request_id} already exists in store"}
 
     assert ETSStore.lookup(@request_id, @options) == {@data, @fingerprint, expires_at}
 
     updated_expires_at = DateTime.utc_now()
-    assert ETSStore.update(@other_request_id, @updated_data, updated_expires_at, @options) == {:error, "key #{@other_request_id} not found in store"}
+
+    assert ETSStore.update(@other_request_id, @updated_data, updated_expires_at, @options) ==
+             {:error, "key #{@other_request_id} not found in store"}
+
     assert ETSStore.update(@request_id, @updated_data, updated_expires_at, @options) == :ok
 
-    assert ETSStore.lookup(@request_id, @options) == {@updated_data, @fingerprint, updated_expires_at}
+    assert ETSStore.lookup(@request_id, @options) ==
+             {@updated_data, @fingerprint, updated_expires_at}
   end
 
   test "prunes" do

@@ -82,7 +82,7 @@ defmodule IdempotencyPlug.ETSStore do
   defp table(opts) do
     case Keyword.fetch(opts, :table) do
       {:ok, table} -> {:ok, table}
-      :error -> {:error, ":table must be specified in options for #{inspect __MODULE__}"}
+      :error -> {:error, ":table must be specified in options for #{inspect(__MODULE__)}"}
     end
   end
 

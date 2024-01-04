@@ -4,10 +4,9 @@ defmodule IdempotencyPlug do
     There's no Idempotency-Key request headers.
     """
 
-    defexception [
-      message: "No idempotency key found. You need to set the `Idempotency-Key` header for all POST requests: 'Idempotency-Key: KEY'",
-      plug_status: :bad_request
-    ]
+    defexception message:
+                   "No idempotency key found. You need to set the `Idempotency-Key` header for all POST requests: 'Idempotency-Key: KEY'",
+                 plug_status: :bad_request
   end
 
   defmodule MultipleHeadersError do
@@ -15,10 +14,8 @@ defmodule IdempotencyPlug do
     There are multiple Idempotency-Key request headers.
     """
 
-    defexception [
-      message: "Only one `Idempotency-Key` header can be sent",
-      plug_status: :bad_request
-    ]
+    defexception message: "Only one `Idempotency-Key` header can be sent",
+                 plug_status: :bad_request
   end
 
   defmodule ConcurrentRequestError do
@@ -26,10 +23,9 @@ defmodule IdempotencyPlug do
     There's another request currently being processed for this ID.
     """
 
-    defexception [
-      message: "A request with the same `Idempotency-Key` is currently being processed",
-      plug_status: :conflict
-    ]
+    defexception message:
+                   "A request with the same `Idempotency-Key` is currently being processed",
+                 plug_status: :conflict
   end
 
   defmodule RequestPayloadFingerprintMismatchError do
@@ -51,18 +47,20 @@ defmodule IdempotencyPlug do
 
     defexception [
       :reason,
-      message: "The original request was interrupted and can't be recovered as it's in an unknown state",
+      message:
+        "The original request was interrupted and can't be recovered as it's in an unknown state",
       plug_status: :internal_server_error
     ]
   end
 
-  defimpl Plug.Exception, for: [
-    NoHeadersError,
-    MultipleHeadersError,
-    ConcurrentRequestError,
-    RequestPayloadFingerprintMismatchError,
-    HaltedResponseError
-  ] do
+  defimpl Plug.Exception,
+    for: [
+      NoHeadersError,
+      MultipleHeadersError,
+      ConcurrentRequestError,
+      RequestPayloadFingerprintMismatchError,
+      HaltedResponseError
+    ] do
     def status(%{plug_status: status}), do: Plug.Conn.Status.code(status)
     def actions(_), do: []
   end
@@ -173,7 +171,7 @@ defmodule IdempotencyPlug do
 
       other ->
         raise ArgumentError,
-          "option :tracker must be one of PID or Atom, got: #{inspect(other)}"
+              "option :tracker must be one of PID or Atom, got: #{inspect(other)}"
     end
 
     opts
@@ -208,7 +206,7 @@ defmodule IdempotencyPlug do
         other ->
           # credo:disable-for-next-line Credo.Check.Warning.RaiseInsideRescue
           raise ArgumentError,
-            "option :with should be one of :exception or MFA, got: #{inspect(other)}"
+                "option :with should be one of :exception or MFA, got: #{inspect(other)}"
       end
   end
 
@@ -254,9 +252,14 @@ defmodule IdempotencyPlug do
 
     processed_key =
       case Keyword.get(opts, :idempotency_key, {__MODULE__, :idempotency_key}) do
-        {mod, fun} -> apply(mod, fun, [conn, key])
-        {mod, fun, args} -> apply(mod, fun, [conn, key | args])
-        other -> raise ArgumentError, "option :idempotency_key must be a MFA, got: #{inspect(other)}"
+        {mod, fun} ->
+          apply(mod, fun, [conn, key])
+
+        {mod, fun, args} ->
+          apply(mod, fun, [conn, key | args])
+
+        other ->
+          raise ArgumentError, "option :idempotency_key must be a MFA, got: #{inspect(other)}"
       end
 
     hash(:idempotency_key, processed_key, opts)
@@ -275,9 +278,15 @@ defmodule IdempotencyPlug do
   defp hash_request_payload(conn, opts) do
     payload =
       case Keyword.get(opts, :request_payload, {__MODULE__, :request_payload}) do
-        {mod, fun} -> apply(mod, fun, [conn])
-        {mod, fun, args} -> apply(mod, fun, [conn | args])
-        other -> raise ArgumentError, "option :request_payload must be a MFA tuple, got: #{inspect(other)}"
+        {mod, fun} ->
+          apply(mod, fun, [conn])
+
+        {mod, fun, args} ->
+          apply(mod, fun, [conn | args])
+
+        other ->
+          raise ArgumentError,
+                "option :request_payload must be a MFA tuple, got: #{inspect(other)}"
       end
 
     hash(:request_payload, payload, opts)
@@ -308,7 +317,7 @@ defmodule IdempotencyPlug do
     Conn.register_before_send(conn, fn conn ->
       case RequestTracker.put_response(tracker, key, conn_to_response(conn)) do
         {:ok, expires} -> put_expires_header(conn, expires)
-        {:error, error} -> raise "failed to put response in cache store, got: #{inspect error}"
+        {:error, error} -> raise "failed to put response in cache store, got: #{inspect(error)}"
       end
     end)
   end
@@ -338,8 +347,11 @@ defmodule IdempotencyPlug do
     mod
     |> apply(fun, [conn, error | args])
     |> case do
-      %Conn{halted: true} = conn -> conn
-      other -> raise ArgumentError, "option :with MUST return a halted conn, got: #{inspect(other)}"
+      %Conn{halted: true} = conn ->
+        conn
+
+      other ->
+        raise ArgumentError, "option :with MUST return a halted conn, got: #{inspect(other)}"
     end
   end
 end

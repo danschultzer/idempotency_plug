@@ -31,7 +31,8 @@ defmodule IdempotencyPlug.Store do
 
   @callback setup(options()) :: :ok | {:error, term()}
   @callback lookup(request_id(), options()) :: {data(), fingerprint(), expires_at()} | :not_found
-  @callback insert(request_id(), data(), fingerprint(), expires_at(), options()) :: :ok | {:error, term()}
+  @callback insert(request_id(), data(), fingerprint(), expires_at(), options()) ::
+              :ok | {:error, term()}
   @callback update(request_id(), data(), expires_at(), options()) :: :ok | {:error, term()}
   @callback prune(options()) :: :ok
 end
