@@ -14,9 +14,11 @@ defmodule IdempotencyPlugTest do
   end
 
   test "with invalid tracker" do
-    assert_raise ArgumentError, "option :tracker must be one of PID or Atom, got: \"invalid\"", fn ->
-      IdempotencyPlug.init(tracker: "invalid")
-    end
+    assert_raise ArgumentError,
+                 "option :tracker must be one of PID or Atom, got: \"invalid\"",
+                 fn ->
+                   IdempotencyPlug.init(tracker: "invalid")
+                 end
   end
 
   test "with no idempotency header set", %{conn: conn, tracker: tracker} do
@@ -69,13 +71,17 @@ defmodule IdempotencyPlugTest do
 
     task =
       Task.async(fn ->
-        run_plug(conn, tracker, callback: fn conn ->
-          send(pid, :continue)
-          receive do
-            :continue -> :ok
+        run_plug(conn, tracker,
+          callback: fn conn ->
+            send(pid, :continue)
+
+            receive do
+              :continue -> :ok
+            end
+
+            conn
           end
-          conn
-        end)
+        )
       end)
 
     receive do
@@ -88,7 +94,9 @@ defmodule IdempotencyPlugTest do
       end
 
     assert Plug.Exception.status(error) == 409
-    assert error.message =~ "A request with the same `Idempotency-Key` is currently being processed"
+
+    assert error.message =~
+             "A request with the same `Idempotency-Key` is currently being processed"
 
     send(task.pid, :continue)
     Task.await(task)
@@ -106,16 +114,20 @@ defmodule IdempotencyPlugTest do
       end
 
     assert Plug.Exception.status(error) == 500
-    assert error.message =~ "The original request was interrupted and can't be recovered as it's in an unknown state"
+
+    assert error.message =~
+             "The original request was interrupted and can't be recovered as it's in an unknown state"
   end
 
   test "with cached response", %{conn: conn, tracker: tracker} do
     other_conn =
-      run_plug(conn, tracker, callback: fn conn ->
-        conn
-        |> put_resp_header("x-header-key", "header-value")
-        |> send_resp(201, "OTHER")
-      end)
+      run_plug(conn, tracker,
+        callback: fn conn ->
+          conn
+          |> put_resp_header("x-header-key", "header-value")
+          |> send_resp(201, "OTHER")
+        end
+      )
 
     conn = run_plug(conn, tracker)
 
@@ -138,7 +150,9 @@ defmodule IdempotencyPlugTest do
       end
 
     assert Plug.Exception.status(error) == 422
-    assert error.message =~ "This `Idempotency-Key` can't be reused with a different payload or URI"
+
+    assert error.message =~
+             "This `Idempotency-Key` can't be reused with a different payload or URI"
   end
 
   test "with cached response with different request URI", %{conn: conn, tracker: tracker} do
@@ -229,9 +243,11 @@ defmodule IdempotencyPlugTest do
   end
 
   test "with invalid `:request_payload`", %{conn: conn, tracker: tracker} do
-    assert_raise ArgumentError, "option :request_payload must be a MFA tuple, got: :invalid", fn ->
-      run_plug(conn, tracker, request_payload: :invalid)
-    end
+    assert_raise ArgumentError,
+                 "option :request_payload must be a MFA tuple, got: :invalid",
+                 fn ->
+                   run_plug(conn, tracker, request_payload: :invalid)
+                 end
   end
 
   def scope_request_payload(conn, :arg1), do: Map.take(conn.params, ["a"])
@@ -256,22 +272,26 @@ defmodule IdempotencyPlugTest do
     error =
       assert_raise IdempotencyPlug.RequestPayloadFingerprintMismatchError, fn ->
         conn
-        |> Map.put(:params,  %{"a" => 2})
+        |> Map.put(:params, %{"a" => 2})
         |> run_plug(tracker, opts)
       end
 
     assert Plug.Exception.status(error) == 422
-    assert error.message =~ "This `Idempotency-Key` can't be reused with a different payload or URI"
+
+    assert error.message =~
+             "This `Idempotency-Key` can't be reused with a different payload or URI"
   end
 
   test "with invalid `:with`", %{conn: conn, tracker: tracker} do
-    assert_raise ArgumentError, "option :with should be one of :exception or MFA, got: :invalid", fn ->
-      conn
-      |> other_request_payload()
-      |> run_plug(tracker, with: :invalid)
+    assert_raise ArgumentError,
+                 "option :with should be one of :exception or MFA, got: :invalid",
+                 fn ->
+                   conn
+                   |> other_request_payload()
+                   |> run_plug(tracker, with: :invalid)
 
-      run_plug(conn, tracker, with: :invalid)
-    end
+                   run_plug(conn, tracker, with: :invalid)
+                 end
   end
 
   def handle_error(conn, error, :arg1) do
@@ -294,11 +314,15 @@ defmodule IdempotencyPlugTest do
 
     assert resp_conn.halted
     assert resp_conn.status == 422
-    assert resp_conn.resp_body == "This `Idempotency-Key` can't be reused with a different payload or URI"
 
-    assert_raise ArgumentError, ~r/option :with MUST return a halted conn, got: %Plug.Conn{/, fn ->
-     run_plug(conn, tracker, with: {__MODULE__, :handle_error_unhalted})
-    end
+    assert resp_conn.resp_body ==
+             "This `Idempotency-Key` can't be reused with a different payload or URI"
+
+    assert_raise ArgumentError,
+                 ~r/option :with MUST return a halted conn, got: %Plug.Conn{/,
+                 fn ->
+                   run_plug(conn, tracker, with: {__MODULE__, :handle_error_unhalted})
+                 end
   end
 
   defp setup_tracker(_) do
@@ -319,7 +343,7 @@ defmodule IdempotencyPlugTest do
 
   defp run_plug(conn, tracker, opts \\ []) do
     {callback, opts} = Keyword.pop(opts, :callback)
-    callback = callback || &send_resp(&1, 200, "OK")
+    callback = callback || (&send_resp(&1, 200, "OK"))
 
     conn
     |> IdempotencyPlug.call(IdempotencyPlug.init([tracker: tracker] ++ opts))

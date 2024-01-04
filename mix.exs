@@ -37,6 +37,7 @@ defmodule IdempotencyPlug.MixProject do
       {:ecto, "~> 3.9", optional: true},
       {:ecto_sql, "~> 3.9", optional: true},
 
+      # Development and test
       {:postgrex, ">= 0.0.0", only: [:test]},
       {:credo, ">= 0.0.0", only: [:dev, :test]},
       {:ex_doc, ">= 0.0.0", only: :dev, runtime: false}
