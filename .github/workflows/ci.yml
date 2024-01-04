@@ -2,10 +2,9 @@ name: CI
 
 on:
   push:
+    branches: [ main ]
   pull_request:
-  release:
-    types:
-      - published
+  workflow_call:
 
 jobs:
   test:
@@ -23,37 +22,23 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         version:
           - elixir: 1.15
             otp: 26.0
-            deploy: true
+    runs-on: ubuntu-latest
     name: OTP ${{matrix.version.otp}} / Elixir ${{matrix.version.elixir}}
+    env:
+      MIX_ENV: test
+      POSTGRES_URL: ecto://postgres:postgres@localhost/idempotency_plug_test
     steps:
       - uses: actions/checkout@v2
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{matrix.version.otp}}
           elixir-version: ${{matrix.version.elixir}}
-      - run: mix deps.get
+      - run: mix deps.get mix compile --warnings-as-errors
       - run: mix test
-        env:
-          POSTGRES_URL: ecto://postgres:postgres@localhost/idempotency_plug_test
-      - run: MIX_ENV=test mix credo
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    if: github.event_name == 'release' && github.event.action == 'published'
-    name: Deploy published release
-    env:
-      HEX_API_KEY: ${{secrets.HEX_API_KEY}}
-    steps:
-      - uses: actions/checkout@v2
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: 25.0
-          elixir-version: 1.14
-      - run: mix deps.get
-      - run: mix hex.publish --yes
+      - run: mix credo
+
