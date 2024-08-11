@@ -98,7 +98,7 @@ plug IdempotencyPlug,
 
 def handle_error(conn, error) do
   conn
-  |> put_status(Plug.Exception.Handler.status(error))
+  |> put_status(Plug.Exception.status(error))
   |> json(%{error: error.message})
   |> halt()
 end
