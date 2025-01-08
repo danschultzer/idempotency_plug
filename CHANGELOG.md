@@ -1,3 +1,10 @@
+## v0.2.2 (TBA)
+
+### Changes
+
+* Added `idempotency_plug.track` telemetry span
+* Added `idempotency_plug.request_tracker.cache_hit`, `idempotency_plug.request_tracker.cache_miss`, and  `idempotency_plug.request_tracker.prune` telemetry events
+
 ## v0.2.1 (2023-04-28)
 
 Relaxed dependency requirements for `ecto` and `ecto_sql`.

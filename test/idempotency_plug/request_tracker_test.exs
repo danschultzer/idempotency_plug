@@ -13,14 +13,33 @@ defmodule IdempotencyPlug.RequestTrackerTest do
   test "with no cached response", %{pid: pid} do
     expires_after = DateTime.add(DateTime.utc_now(), 24, :hour)
 
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :request_tracker, :cache_miss]
+      ])
+
     assert {:init, key, expires} = RequestTracker.track(pid, "no-cache", "fingerprint")
     assert DateTime.compare(expires, expires_after) != :lt
+
+    assert_receive {[:idempotency_plug, :request_tracker, :cache_miss], ^ref, measurements,
+                    metadata}
+
+    assert measurements == %{}
+    assert metadata.request_id == key
+    assert metadata.fingerprint == "fingerprint"
+    assert metadata.store == IdempotencyPlug.ETSStore
+    assert metadata.expires_at == expires
 
     assert {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
     assert DateTime.compare(expires, expires_after) != :lt
   end
 
   test "with concurrent requests", %{pid: pid} do
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :request_tracker, :cache_hit]
+      ])
+
     test_pid = self()
 
     task =
@@ -42,6 +61,11 @@ defmodule IdempotencyPlug.RequestTrackerTest do
       {:expires, expires} ->
         assert {:processing, _node_caller, ^expires} =
                  RequestTracker.track(pid, "concurrent-request", "fingerprint")
+
+        assert_receive {[:idempotency_plug, :request_tracker, :cache_hit], ^ref, _measurements,
+                        metadata}
+
+        assert metadata.expires_at == expires
     end
 
     send(task.pid, :continue)
@@ -57,16 +81,36 @@ defmodule IdempotencyPlug.RequestTrackerTest do
     {:init, key, _expires} = RequestTracker.track(pid, "cached-fingerprint", "fingerprint")
     {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
 
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :request_tracker, :cache_hit]
+      ])
+
     assert {:mismatch, {:fingerprint, "fingerprint"}, ^expires} =
              RequestTracker.track(pid, "cached-fingerprint", "other-fingerprint")
+
+    assert_receive {[:idempotency_plug, :request_tracker, :cache_hit], ^ref, _measurements,
+                    metadata}
+
+    assert metadata.expires_at == expires
   end
 
   test "with cached response", %{pid: pid} do
     {:init, key, _expires} = RequestTracker.track(pid, "cached-response", "fingerprint")
     {:ok, expires} = RequestTracker.put_response(pid, key, "OK")
 
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :request_tracker, :cache_hit]
+      ])
+
     assert {:cache, {:ok, "OK"}, ^expires} =
              RequestTracker.track(pid, "cached-response", "fingerprint")
+
+    assert_receive {[:idempotency_plug, :request_tracker, :cache_hit], ^ref, _measurements,
+                    metadata}
+
+    assert metadata.expires_at == expires
   end
 
   @tag capture_log: true
@@ -81,8 +125,18 @@ defmodule IdempotencyPlug.RequestTrackerTest do
 
     {{%RuntimeError{message: "oops"}, _}, _} = catch_exit(Task.await(task))
 
-    assert {:cache, {:halted, {%RuntimeError{message: "oops"}, _}}, _expires} =
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :request_tracker, :cache_hit]
+      ])
+
+    assert {:cache, {:halted, {%RuntimeError{message: "oops"}, _}}, expires} =
              RequestTracker.track(pid, "halted-request", "fingerprint")
+
+    assert_receive {[:idempotency_plug, :request_tracker, :cache_hit], ^ref, _measurements,
+                    metadata}
+
+    assert metadata.expires_at == expires
   end
 
   test "when no tracked request", %{pid: pid} do
@@ -97,7 +151,15 @@ defmodule IdempotencyPlug.RequestTrackerTest do
     assert {:processing, _node_caller, _expires} =
              RequestTracker.track(pid, "prune", "fingerprint")
 
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :request_tracker, :prune]
+      ])
+
     :timer.sleep(20)
     assert {:init, _id, _expires} = RequestTracker.track(pid, "prune", "fingerprint")
+
+    assert_receive {[:idempotency_plug, :request_tracker, :prune], ^ref, _measurements, metadata}
+    assert metadata.store == IdempotencyPlug.ETSStore
   end
 end
