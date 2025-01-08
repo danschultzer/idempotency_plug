@@ -61,7 +61,7 @@ All POST and PATCH requests will now be idempotent using the `Idempotency-Key` H
 
 ### Persisted store
 
-The ETS store is not persisted, so it's not production ready. Instead, let's change the store to use Ecto.
+The ETS store is not persisted, so it's not production-ready. Instead, let's change the store to use Ecto.
 
 First, run `mix idempotency_plug.ecto.gen.migration`.
 
@@ -73,7 +73,7 @@ Now update the configuration for the request tracker:
 
 You can also implement your own idempotent request store by using the behaviour in `IdempotencyPlug.Store`.
 
-## Scope `Idempotency-Key`
+## Scope `Idempotency-Key` to authenticated user
 
 If you are authenticating users then you must scope the `Idempotency-Key` to the authenticated user:
 
@@ -85,7 +85,7 @@ plug IdempotencyPlug,
 def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
 ```
 
-Otherwise, you may have a security vulnerability (or conflict) where any user can access another user's cached responses when requests are identical.
+If you do not do this, you may have a security vulnerability (or conflict) where any user can access another user's cached responses when requests are identical.
 
 ## Customize error response
 
