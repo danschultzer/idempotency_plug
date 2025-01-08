@@ -58,16 +58,33 @@ defmodule IdempotencyPlugTest do
   end
 
   test "with no cached response", %{conn: conn, tracker: tracker} do
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :track, :start],
+        [:idempotency_plug, :track, :stop]
+      ])
+
     conn = run_plug(conn, tracker)
 
     refute conn.halted
     assert conn.status == 200
     assert conn.resp_body == "OK"
     assert expires(conn)
+
+    assert_receive {[:idempotency_plug, :track, :start], ^ref, _measurements, metadata}
+    assert is_pid(metadata.tracker)
+    assert %Plug.Conn{resp_body: nil} = metadata.conn
+    assert [metadata.idempotency_key] == get_req_header(conn, "idempotency-key")
+    assert_receive {[:idempotency_plug, :track, :stop], ^ref, _measurements, _metadata}
   end
 
   test "with concurrent request", %{conn: conn, tracker: tracker} do
     pid = self()
+
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :track, :exception]
+      ])
 
     task =
       Task.async(fn ->
@@ -100,10 +117,18 @@ defmodule IdempotencyPlugTest do
 
     send(task.pid, :continue)
     Task.await(task)
+
+    assert_receive {[:idempotency_plug, :track, :exception], ^ref, _measurements, metadata}
+    assert %IdempotencyPlug.ConcurrentRequestError{} = metadata.reason
   end
 
   @tag capture_log: true
   test "with halted response", %{conn: conn, tracker: tracker} do
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :track, :exception]
+      ])
+
     Process.flag(:trap_exit, true)
     task = Task.async(fn -> run_plug(conn, tracker, callback: fn _conn -> raise "failed" end) end)
     {{%RuntimeError{}, _}, _} = catch_exit(Task.await(task))
@@ -117,9 +142,17 @@ defmodule IdempotencyPlugTest do
 
     assert error.message =~
              "The original request was interrupted and can't be recovered as it's in an unknown state"
+
+    assert_receive {[:idempotency_plug, :track, :exception], ^ref, _measurements, metadata}
+    assert %IdempotencyPlug.HaltedResponseError{} = metadata.reason
   end
 
   test "with cached response", %{conn: conn, tracker: tracker} do
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :track, :stop]
+      ])
+
     other_conn =
       run_plug(conn, tracker,
         callback: fn conn ->
@@ -129,6 +162,8 @@ defmodule IdempotencyPlugTest do
         end
       )
 
+    assert_receive {[:idempotency_plug, :track, :stop], _, _, _}
+
     conn = run_plug(conn, tracker)
 
     assert conn.halted
@@ -136,9 +171,17 @@ defmodule IdempotencyPlugTest do
     assert conn.resp_body == "OTHER"
     assert expires(conn) == expires(other_conn)
     assert get_resp_header(conn, "x-header-key") == ["header-value"]
+
+    assert_receive {[:idempotency_plug, :track, :stop], ^ref, _measurements, metadata}
+    assert metadata.conn.resp_body == "OTHER"
   end
 
   test "with cached response with different request payload", %{conn: conn, tracker: tracker} do
+    ref =
+      :telemetry_test.attach_event_handlers(self(), [
+        [:idempotency_plug, :track, :exception]
+      ])
+
     _other_conn =
       conn
       |> other_request_payload()
@@ -153,6 +196,9 @@ defmodule IdempotencyPlugTest do
 
     assert error.message =~
              "This `Idempotency-Key` can't be reused with a different payload or URI"
+
+    assert_receive {[:idempotency_plug, :track, :exception], ^ref, _measurements, metadata}
+    assert %IdempotencyPlug.RequestPayloadFingerprintMismatchError{} = metadata.reason
   end
 
   test "with cached response with different request URI", %{conn: conn, tracker: tracker} do
