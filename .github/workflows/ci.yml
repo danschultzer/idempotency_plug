@@ -22,6 +22,7 @@ jobs:
       - run: mix compile --warnings-as-errors
       - run: mix credo --strict --ignore design.alias
       - run: mix format --check-formatted
+      - run: mix dialyzer --format github
 
   test:
     services:
