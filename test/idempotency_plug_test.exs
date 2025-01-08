@@ -144,24 +144,40 @@ defmodule IdempotencyPlugTest do
 
   @tag request_tracker_opts: [store: {InsertErrorStore, []}]
   test "with store insert error", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:exception])
+
     assert_raise RuntimeError,
                  ~r/failed to track request, got: %RuntimeError{message: \"boom\"}/,
                  fn ->
                    run_plug(conn, tracker)
                  end
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :exception)
+    assert %RuntimeError{} = metadata.reason
   end
 
   test "with no cached response", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:start, :stop])
+
     conn = run_plug(conn, tracker)
 
     refute conn.halted
     assert conn.status == 200
     assert conn.resp_body == "OK"
     assert expires(conn)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :start)
+    assert %Plug.Conn{resp_body: nil} = metadata.conn
+    assert metadata.tracker == tracker
+    refute Map.has_key?(metadata.conn.private, :before_send)
+    assert [metadata.idempotency_key] == get_req_header(conn, "idempotency-key")
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :stop)
+    assert Map.has_key?(metadata.conn.private, :before_send)
   end
 
   test "with concurrent request", %{conn: conn, tracker: tracker} do
     pid = self()
+    ref = attach_track_telemetry_events([:exception])
 
     task =
       Task.async(fn ->
@@ -194,10 +210,15 @@ defmodule IdempotencyPlugTest do
 
     send(task.pid, :continue)
     Task.await(task)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :exception)
+    assert %IdempotencyPlug.ConcurrentRequestError{} = metadata.reason
   end
 
   @tag capture_log: true
   test "with halted response", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:exception])
+
     Process.flag(:trap_exit, true)
     task = Task.async(fn -> run_plug(conn, tracker, callback: fn _conn -> raise "failed" end) end)
     {{%RuntimeError{}, _}, _} = catch_exit(Task.await(task))
@@ -211,9 +232,14 @@ defmodule IdempotencyPlugTest do
 
     assert error.message =~
              "The original request was interrupted and can't be recovered as it's in an unknown state"
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :exception)
+    assert %IdempotencyPlug.HaltedResponseError{} = metadata.reason
   end
 
   test "with cached response", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:stop])
+
     other_conn =
       run_plug(conn, tracker,
         callback: fn conn ->
@@ -223,6 +249,8 @@ defmodule IdempotencyPlugTest do
         end
       )
 
+    assert_track_telemetry_event(ref, :stop)
+
     conn = run_plug(conn, tracker)
 
     assert conn.halted
@@ -230,6 +258,9 @@ defmodule IdempotencyPlugTest do
     assert conn.resp_body == "OTHER"
     assert expires(conn) == expires(other_conn)
     assert get_resp_header(conn, "x-header-key") == ["header-value"]
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :stop)
+    assert metadata.conn.resp_body == "OTHER"
   end
 
   test "with cached response with headers set on conn", %{
@@ -276,6 +307,8 @@ defmodule IdempotencyPlugTest do
   end
 
   test "with cached response with different request payload", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:exception])
+
     _other_conn =
       conn
       |> other_request_payload()
@@ -290,6 +323,9 @@ defmodule IdempotencyPlugTest do
 
     assert error.message =~
              "This `Idempotency-Key` can't be reused with a different payload or URI"
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :exception)
+    assert %IdempotencyPlug.RequestPayloadFingerprintMismatchError{} = metadata.reason
   end
 
   test "with cached response with different request URI", %{conn: conn, tracker: tracker} do
@@ -480,6 +516,21 @@ defmodule IdempotencyPlugTest do
       [expires] -> expires
       [] -> nil
     end
+  end
+
+  defp attach_track_telemetry_events(events) do
+    :telemetry_test.attach_event_handlers(
+      self(),
+      Enum.map(events, fn event ->
+        [:idempotency_plug, :track, event]
+      end)
+    )
+  end
+
+  defp assert_track_telemetry_event(ref, event) do
+    assert_receive {[:idempotency_plug, :track, ^event], ^ref, measurements, metadata}
+
+    {measurements, metadata}
   end
 
   defp other_request_payload(conn), do: %{conn | params: %{"other_key" => "1"}}

@@ -12,7 +12,13 @@ Requires Elixir 1.15 or higher.
 
 - `IdempotencyPlug.ETSStore` now uses `:set` instead of `:ordered_set` for faster lookups
 - Cached responses now use the original response headers exactly, dropping any headers set by upstream plugs
+
+### Additions
+
 - Support `:cached_headers` option to set custom headers like `Idempotent-Replayed` for cached responses
+- Added `[:idempotency_plug, :track, _event]` telemetry span events
+- Added `[:idempotency_plug, :request_tracker, :cache_hit]` and `[:idempotency_plug, :request_tracker, :cache_miss]` telemetry events
+- Added `[:idempotency_plug, :request_tracker, :prune, _event]` telemetry span events
 
 ## v0.2.1 (2023-04-28)
 

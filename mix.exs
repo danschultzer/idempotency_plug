@@ -40,6 +40,7 @@ defmodule IdempotencyPlug.MixProject do
       {:ecto, "~> 3.9", optional: true},
       {:ecto_sql, "~> 3.9", optional: true},
       {:plug, "~> 1.14"},
+      {:telemetry, "~> 1.0"},
 
       # Development and test
       {:postgrex, ">= 0.0.0", only: [:test]},

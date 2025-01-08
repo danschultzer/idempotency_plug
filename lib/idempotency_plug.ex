@@ -95,6 +95,22 @@ defmodule IdempotencyPlug do
     * `:cached_headers` - a list of response `{name, value}` tuple headers to
       add on top of the cached response.
 
+  ## Telemetry events
+
+  The following events are emitted by the Plug:
+
+    * `[:idempotency_plug, :track, :start]` - dispatched before tracking a request
+      * Measurement: `%{monotonic_time: integer(), system_time: integer()}`
+      * Metadata: `%{telemetry_span_context: term(), conn: Plug.Conn.t(), tracker: GenServer.server(), idempotency_key: binary()}`
+
+    * `[:idempotency_plug, :track, :exception]` - dispatched on exceptions during request tracking
+      * Measurement: `%{monotonic_time: integer(), duration: integer()}`
+      * Metadata: `%{telemetry_span_context: term(), conn: Plug.Conn.t(), tracker: GenServer.server(), idempotency_key: binary(), kind: :throw | :error | :exit, reason: term(), stacktrace: list()}`
+
+    * `[:idempotency_plug, :track, :stop]` - dispatched after successfully tracking a request
+      * Measurement: `%{monotonic_time: integer(), duration: integer()}`
+      * Metadata: `%{telemetry_span_context: term(), conn: Plug.Conn.t(), tracker: GenServer.server(), idempotency_key: binary()}`
+
   ## Examples
 
       plug IdempotencyPlug,
@@ -322,28 +338,42 @@ defmodule IdempotencyPlug do
     idempotency_key_hash = hash_idempotency_key(conn, key, options)
     request_payload_hash = hash_request_payload(conn, options)
 
-    case RequestTracker.track(tracker, idempotency_key_hash, request_payload_hash) do
-      {:processing, _node_caller, _expires} ->
-        raise ConcurrentRequestError
+    metadata =
+      %{
+        conn: conn,
+        tracker: tracker,
+        idempotency_key: key
+      }
 
-      {:mismatch, {:fingerprint, fingerprint}, _expires} ->
-        raise RequestPayloadFingerprintMismatchError, fingerprint: fingerprint
+    :telemetry.span([:idempotency_plug, :track], metadata, fn ->
+      case RequestTracker.track(tracker, idempotency_key_hash, request_payload_hash) do
+        {:processing, _node_caller, _expires} ->
+          raise ConcurrentRequestError
 
-      {:cache, {:halted, reason}, _expires} ->
-        raise HaltedResponseError, reason: reason
+        {:mismatch, {:fingerprint, fingerprint}, _expires} ->
+          raise RequestPayloadFingerprintMismatchError, fingerprint: fingerprint
 
-      {:cache, {:ok, response}, expires} ->
-        conn
-        |> put_resp(response, options)
-        |> put_expires_header(expires)
-        |> Conn.halt()
+        {:cache, {:halted, reason}, _expires} ->
+          raise HaltedResponseError, reason: reason
 
-      {:init, idempotency_key, _expires} ->
-        update_response_before_send(conn, idempotency_key, options)
+        {:cache, {:ok, response}, expires} ->
+          conn =
+            conn
+            |> put_resp(response, options)
+            |> put_expires_header(expires)
+            |> Conn.halt()
 
-      {:error, error} ->
-        raise "failed to track request, got: #{inspect(error)}"
-    end
+          {conn, %{metadata | conn: conn}}
+
+        {:init, idempotency_key, _expires} ->
+          conn = update_response_before_send(conn, idempotency_key, options)
+
+          {conn, %{metadata | conn: conn}}
+
+        {:error, error} ->
+          raise "failed to track request, got: #{inspect(error)}"
+      end
+    end)
   end
 
   @doc """
