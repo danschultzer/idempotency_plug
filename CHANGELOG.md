@@ -1,3 +1,7 @@
+## Unreleased
+
+Requires Elixir 1.15 or higher.
+
 ## v0.2.1 (2023-04-28)
 
 Relaxed dependency requirements for `ecto` and `ecto_sql`.
