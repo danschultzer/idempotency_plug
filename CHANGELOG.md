@@ -2,6 +2,8 @@
 
 Requires Elixir 1.15 or higher.
 
+- Prevent decoding of unsafe data in `IdempotencyPlug.EctoStore`
+
 ## v0.2.1 (2023-04-28)
 
 Relaxed dependency requirements for `ecto` and `ecto_sql`.

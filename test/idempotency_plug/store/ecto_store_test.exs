@@ -53,6 +53,23 @@ defmodule IdempotencyPlug.EctoStoreTest do
              {@updated_data, @fingerprint, updated_expires_at}
   end
 
+  test "prevents decoding of unsafe data" do
+    :ok = EctoStore.setup(@options)
+
+    unsafe_data = <<131, 119, 8, "tjenixen">>
+
+    assert EctoStore.insert(@request_id, @data, @fingerprint, DateTime.utc_now(), @options) == :ok
+
+    TestRepo.query!("UPDATE idempotency_plug_requests SET data = $1 WHERE id = $2", [
+      unsafe_data,
+      @request_id
+    ])
+
+    assert_raise ArgumentError, ~r/invalid or unsafe external representation of a term/, fn ->
+      EctoStore.lookup(@request_id, @options)
+    end
+  end
+
   test "prunes" do
     :ok = EctoStore.setup(@options)
 
