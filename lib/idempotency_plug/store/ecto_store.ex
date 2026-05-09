@@ -34,7 +34,7 @@ if Code.ensure_loaded?(Ecto) do
       def cast(term), do: {:ok, term}
 
       @impl true
-      def load(bin) when is_binary(bin), do: {:ok, :erlang.binary_to_term(bin)}
+      def load(bin) when is_binary(bin), do: {:ok, :erlang.binary_to_term(bin, [:safe])}
 
       @impl true
       def dump(term), do: {:ok, :erlang.term_to_binary(term)}
