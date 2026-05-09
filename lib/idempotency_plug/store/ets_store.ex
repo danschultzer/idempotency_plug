@@ -14,7 +14,7 @@ defmodule IdempotencyPlug.ETSStore do
         def start(_type, _args) do
           children = [
             {IdempotencyPlug.RequestTracker, [
-              store: {IdempotencyPlug.EctoStore, [table: MyAppWeb.RequestTrackerStore]}]}
+              store: {IdempotencyPlug.ETSStore, table: MyAppWeb.RequestTrackerStore}]}
             # ...
           ]
 

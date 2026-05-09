@@ -110,7 +110,7 @@ For your controller tests, you may want to add this helper to set up the idempot
 
 ```elixir
 def setup_with_idempotency_key(%{conn: conn}) do
-  conn = Plug.Conn.put_req_header(conn, "idempotency-key", Ecto.UUID.bingenerate())
+  conn = Plug.Conn.put_req_header(conn, "idempotency-key", Ecto.UUID.generate())
 
   {:ok, conn: conn}
 end

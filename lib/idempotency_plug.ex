@@ -5,7 +5,7 @@ defmodule IdempotencyPlug do
     """
 
     defexception message:
-                   "No idempotency key found. You need to set the `Idempotency-Key` header for all POST requests: 'Idempotency-Key: KEY'",
+                   "No idempotency key found. You need to set the `Idempotency-Key` header for all POST and PATCH requests: 'Idempotency-Key: KEY'",
                  plug_status: :bad_request
   end
 
