@@ -356,6 +356,14 @@ defmodule IdempotencyPlugTest do
                  end
   end
 
+  test "__imf_fixdate__/1" do
+    assert IdempotencyPlug.__imf_fixdate__(~U[2026-05-24 12:00:00Z]) ==
+             "Sun, 24 May 2026 12:00:00 GMT"
+
+    assert IdempotencyPlug.__imf_fixdate__(~U[2026-12-01 00:00:00Z]) ==
+             "Tue, 01 Dec 2026 00:00:00 GMT"
+  end
+
   defp setup_tracker(context) do
     request_tracker_opts = context[:request_tracker_opts] || []
     tracker = start_supervised!({RequestTracker, [name: __MODULE__] ++ request_tracker_opts})

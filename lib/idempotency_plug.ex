@@ -356,12 +356,14 @@ defmodule IdempotencyPlug do
   end
 
   defp put_expires_header(conn, expires) do
-    expires =
-      expires
-      |> DateTime.shift_zone!("Etc/UTC")
-      |> Calendar.strftime("%a, %-d %b %Y %X GMT")
+    Conn.put_resp_header(conn, "expires", __imf_fixdate__(expires))
+  end
 
-    Conn.put_resp_header(conn, "expires", expires)
+  @doc false
+  def __imf_fixdate__(datetime) do
+    datetime
+    |> DateTime.shift_zone!("Etc/UTC")
+    |> Calendar.strftime("%a, %d %b %Y %X GMT")
   end
 
   defp ensure_is_halted!(conn, error, mod, fun, args \\ []) do
