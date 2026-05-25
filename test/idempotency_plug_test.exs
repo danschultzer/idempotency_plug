@@ -57,6 +57,35 @@ defmodule IdempotencyPlugTest do
     refute expires(conn)
   end
 
+  defmodule InsertErrorStore do
+    @moduledoc false
+    @behaviour IdempotencyPlug.Store
+
+    @impl true
+    def setup(_opts), do: :ok
+
+    @impl true
+    def lookup(_id, _opts), do: :not_found
+
+    @impl true
+    def insert(_id, _data, _fp, _expires, _opts), do: {:error, %RuntimeError{message: "boom"}}
+
+    @impl true
+    def update(_id, _data, _expires, _opts), do: :ok
+
+    @impl true
+    def prune(_opts), do: :ok
+  end
+
+  @tag request_tracker_opts: [store: {InsertErrorStore, []}]
+  test "with store insert error", %{conn: conn, tracker: tracker} do
+    assert_raise RuntimeError,
+                 ~r/failed to track request, got: %RuntimeError{message: \"boom\"}/,
+                 fn ->
+                   run_plug(conn, tracker)
+                 end
+  end
+
   test "with no cached response", %{conn: conn, tracker: tracker} do
     conn = run_plug(conn, tracker)
 
@@ -325,8 +354,9 @@ defmodule IdempotencyPlugTest do
                  end
   end
 
-  defp setup_tracker(_) do
-    tracker = start_supervised!({RequestTracker, [name: __MODULE__]})
+  defp setup_tracker(context) do
+    request_tracker_opts = context[:request_tracker_opts] || []
+    tracker = start_supervised!({RequestTracker, [name: __MODULE__] ++ request_tracker_opts})
 
     %{tracker: tracker}
   end

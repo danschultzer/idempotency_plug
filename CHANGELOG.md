@@ -2,7 +2,10 @@
 
 Requires Elixir 1.15 or higher.
 
+### Bug fixes
+
 - Prevent decoding of unsafe data in `IdempotencyPlug.EctoStore`
+- `IdempotencyPlug.call/2` now formats store error reasons with `inspect/1` to prevent serialization failure when reason is an error struct
 
 ## v0.2.1 (2023-04-28)
 

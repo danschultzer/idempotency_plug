@@ -238,7 +238,7 @@ defmodule IdempotencyPlug do
         update_response_before_send(conn, idempotency_key, opts)
 
       {:error, error} ->
-        raise "failed to track request, got: #{error}"
+        raise "failed to track request, got: #{inspect(error)}"
     end
   end
 
