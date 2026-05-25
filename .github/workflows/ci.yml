@@ -13,10 +13,10 @@ jobs:
     env:
       MIX_ENV: test
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
-          otp-version: 28.0
+          otp-version: 29.0
           elixir-version: 1.19
       - uses: actions/cache@v4
         env:
@@ -50,21 +50,22 @@ jobs:
     strategy:
       matrix:
         version:
-          - otp: 28.0
+          - otp: 29.0
             elixir: 1.19
           - otp: 26.0
-            elixir: 1.15         
+            elixir: 1.15
     runs-on: ubuntu-latest
     name: OTP ${{matrix.version.otp}} / Elixir ${{matrix.version.elixir}}
     env:
       MIX_ENV: test
       POSTGRES_URL: ecto://postgres:postgres@localhost/idempotency_plug_test
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
         with:
           otp-version: ${{matrix.version.otp}}
           elixir-version: ${{matrix.version.elixir}}
-      - run: mix deps.get mix compile --warnings-as-errors
+      - run: mix deps.get
+      - run: mix compile --warnings-as-errors
       - run: mix test
 

@@ -38,7 +38,6 @@ defmodule IdempotencyPlug.MixProject do
   defp deps do
     [
       {:plug, "~> 1.14"},
-      {:jason, "~> 1.2"},
       {:ecto, "~> 3.9", optional: true},
       {:ecto_sql, "~> 3.9", optional: true},
 
