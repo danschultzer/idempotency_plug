@@ -8,6 +8,10 @@ Requires Elixir 1.15 or higher.
 - `IdempotencyPlug.call/2` now formats store error reasons with `inspect/1` to prevent serialization failure when reason is an error struct
 - `Expires` response header now uses RFC 9110 IMF-fixdate with zero-padded day
 
+### Changes
+
+- `IdempotencyPlug.ETSStore` now uses `:set` instead of `:ordered_set` for faster lookups
+
 ## v0.2.1 (2023-04-28)
 
 Relaxed dependency requirements for `ecto` and `ecto_sql`.
