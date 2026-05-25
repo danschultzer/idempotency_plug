@@ -198,9 +198,11 @@ defmodule IdempotencyPlugTest do
   end
 
   test "with invalid `:idempotency_key`", %{conn: conn, tracker: tracker} do
-    assert_raise ArgumentError, "option :idempotency_key must be a MFA, got: :invalid", fn ->
-      run_plug(conn, tracker, idempotency_key: :invalid)
-    end
+    assert_raise ArgumentError,
+                 "option :idempotency_key must be a MFA tuple, got: :invalid",
+                 fn ->
+                   run_plug(conn, tracker, idempotency_key: :invalid)
+                 end
   end
 
   def scope_idempotency_key(conn, key, :arg1), do: {conn.assigns.custom, key}
@@ -313,7 +315,7 @@ defmodule IdempotencyPlugTest do
 
   test "with invalid `:with`", %{conn: conn, tracker: tracker} do
     assert_raise ArgumentError,
-                 "option :with should be one of :exception or MFA, got: :invalid",
+                 "option :with should be one of :exception or MFA tuple, got: :invalid",
                  fn ->
                    conn
                    |> other_request_payload()
