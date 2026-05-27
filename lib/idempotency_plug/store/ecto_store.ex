@@ -72,15 +72,21 @@ if Code.ensure_loaded?(Ecto) do
     def setup(opts) do
       case repo(opts) do
         {:ok, repo} ->
-          # This will raise an error if the migration haven't been generate
-          # for the repo
-          repo.exists?(IdempotentRequest)
-
-          :ok
+          check_migration(repo, IdempotentRequest)
 
         {:error, error} ->
           {:error, error}
       end
+    end
+
+    defp check_migration(repo, schema) do
+      repo.exists?(schema)
+
+      :ok
+    rescue
+      _error ->
+        {:error,
+         "The table #{schema.__schema__(:source)} is not accessible. Did you generate the Ecto migration with `mix idempotency_plug.ecto.gen.migration`?"}
     end
 
     @impl true

@@ -12,6 +12,12 @@ defmodule IdempotencyPlug.EctoStoreTest do
       adapter: Ecto.Adapters.Postgres
   end
 
+  defmodule UnmigratedTestRepo do
+    use Ecto.Repo,
+      otp_app: :idempotency_plug,
+      adapter: Ecto.Adapters.Postgres
+  end
+
   setup_all :setup_ecto_repo
   setup :setup_ecto_sandbox
 
@@ -22,11 +28,36 @@ defmodule IdempotencyPlug.EctoStoreTest do
   @updated_data {:halted, :terminated}
   @fingerprint sha256_hash(:request_payload, %{"a" => 1})
 
-  test "setup" do
-    assert EctoStore.setup(@options) == :ok
+  describe "setup/1" do
+    test "when `:repo` option is missing" do
+      assert EctoStore.setup([]) ==
+               {:error, ":repo must be specified in options for IdempotencyPlug.EctoStore"}
+    end
 
-    assert EctoStore.setup([]) ==
-             {:error, ":repo must be specified in options for IdempotencyPlug.EctoStore"}
+    test "when not migrated" do
+      Application.put_env(
+        :idempotency_plug,
+        UnmigratedTestRepo,
+        postgres_repo_options("idempotency_plug_unmigrated_test")
+      )
+
+      UnmigratedTestRepo.__adapter__().storage_down(UnmigratedTestRepo.config())
+      :ok = UnmigratedTestRepo.__adapter__().storage_up(UnmigratedTestRepo.config())
+
+      start_supervised!(UnmigratedTestRepo)
+
+      on_exit(fn ->
+        UnmigratedTestRepo.__adapter__().storage_down(UnmigratedTestRepo.config())
+      end)
+
+      assert EctoStore.setup(repo: UnmigratedTestRepo) ==
+               {:error,
+                "The table idempotency_plug_requests is not accessible. Did you generate the Ecto migration with `mix idempotency_plug.ecto.gen.migration`?"}
+    end
+
+    test "when migrated" do
+      assert EctoStore.setup(@options) == :ok
+    end
   end
 
   test "inserts, looks up, and updates" do
@@ -92,12 +123,10 @@ defmodule IdempotencyPlug.EctoStoreTest do
     File.mkdir_p!(@tmp_path)
     File.cd!(@tmp_path)
 
-    Application.put_env(:idempotency_plug, TestRepo,
-      database: "idempotency_plug_test",
-      pool: Ecto.Adapters.SQL.Sandbox,
-      priv: "priv/repo",
-      log: false,
-      url: System.get_env("POSTGRES_URL")
+    Application.put_env(
+      :idempotency_plug,
+      TestRepo,
+      postgres_repo_options("idempotency_plug_test")
     )
 
     capture_io(fn ->
@@ -117,10 +146,21 @@ defmodule IdempotencyPlug.EctoStoreTest do
         &Ecto.Migrator.run(&1, migrations_path, :up, all: true, log: false)
       )
 
-    # start_supervised!(TestRepo)
     Ecto.Adapters.SQL.Sandbox.mode(TestRepo, :manual)
 
     :ok
+  end
+
+  defp postgres_repo_options(database) do
+    base_url = System.get_env("POSTGRES_BASE_URL")
+
+    [
+      database: database,
+      pool: Ecto.Adapters.SQL.Sandbox,
+      priv: "priv/repo",
+      log: false,
+      url: base_url && "#{base_url}/#{database}"
+    ]
   end
 
   defp setup_ecto_sandbox(tags) do

@@ -58,7 +58,7 @@ jobs:
     name: OTP ${{matrix.version.otp}} / Elixir ${{matrix.version.elixir}}
     env:
       MIX_ENV: test
-      POSTGRES_URL: ecto://postgres:postgres@localhost/idempotency_plug_test
+      POSTGRES_BASE_URL: ecto://postgres:postgres@localhost
     steps:
       - uses: actions/checkout@v4
       - uses: erlef/setup-beam@v1
