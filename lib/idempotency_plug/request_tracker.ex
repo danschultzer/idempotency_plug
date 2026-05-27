@@ -175,7 +175,7 @@ defmodule IdempotencyPlug.RequestTracker do
   defp put_monitored(state, request_id, caller) do
     ref = Process.monitor(caller)
 
-    %{state | monitored: state.monitored ++ [{request_id, caller, ref}]}
+    %{state | monitored: [{request_id, caller, ref} | state.monitored]}
   end
 
   defp pop_monitored(state, fun) do
