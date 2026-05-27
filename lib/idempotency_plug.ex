@@ -102,8 +102,8 @@ defmodule IdempotencyPlug do
   """
   @behaviour Plug
 
-  alias Plug.Conn
   alias IdempotencyPlug.RequestTracker
+  alias Plug.Conn
 
   defmodule NoHeadersError do
     @moduledoc """
@@ -173,8 +173,17 @@ defmodule IdempotencyPlug do
 
   @doc false
   @impl true
-  def init(opts) do
-    case Keyword.get(opts, :tracker) do
+  def init(options) do
+    options
+    |> verify_tracker!()
+    |> verify_with!()
+    |> verify_mfa_tuple!(:idempotency_key, {__MODULE__, :idempotency_key})
+    |> verify_mfa_tuple!(:request_payload, {__MODULE__, :request_payload})
+    |> verify_mfa_tuple!(:hash, {__MODULE__, :sha256_hash})
+  end
+
+  defp verify_tracker!(options) do
+    case Keyword.get(options, :tracker) do
       pid when is_pid(pid) ->
         :ok
 
@@ -186,14 +195,48 @@ defmodule IdempotencyPlug do
               "option :tracker must be one of PID or Atom, got: #{inspect(other)}"
     end
 
-    opts
+    options
+  end
+
+  defp verify_with!(options) do
+    case Keyword.get(options, :with, :exception) do
+      :exception ->
+        Keyword.put(options, :with, :exception)
+
+      {mod, fun} ->
+        Keyword.put(options, :with, {mod, fun, []})
+
+      {mod, fun, args} ->
+        Keyword.put(options, :with, {mod, fun, args})
+
+      other ->
+        raise ArgumentError,
+              "option :with should be one of :exception or MFA tuple, got: #{inspect(other)}"
+    end
+  end
+
+  defp verify_mfa_tuple!(options, key, default) do
+    {mod, fun, args} =
+      case Keyword.get(options, key, default) do
+        {mod, fun} ->
+          {mod, fun, []}
+
+        {mod, fun, args} ->
+          {mod, fun, args}
+
+        other ->
+          raise ArgumentError,
+                "option #{inspect(key)} must be a MFA tuple, got: #{inspect(other)}"
+      end
+
+    Keyword.put(options, key, {mod, fun, args})
   end
 
   @doc false
   @impl true
-  def call(%{method: method} = conn, opts) when method in ~w(POST PATCH) do
+  def call(%{method: method} = conn, options) when method in ~w(POST PATCH) do
     case Conn.get_req_header(conn, "idempotency-key") do
-      [key] -> handle_idempotent_request(conn, key, opts)
+      [key] -> handle_idempotent_request(conn, key, options)
       [_ | _] -> raise MultipleHeadersError
       [] -> raise NoHeadersError
     end
@@ -205,30 +248,22 @@ defmodule IdempotencyPlug do
       RequestPayloadFingerprintMismatchError,
       HaltedResponseError
     ] ->
-      case Keyword.get(opts, :with, :exception) do
+      case Keyword.fetch!(options, :with) do
         :exception ->
           reraise error, __STACKTRACE__
 
-        {mod, fun} ->
-          ensure_is_halted!(conn, error, mod, fun)
-
         {mod, fun, args} ->
           ensure_is_halted!(conn, error, mod, fun, args)
-
-        other ->
-          # credo:disable-for-next-line Credo.Check.Warning.RaiseInsideRescue
-          raise ArgumentError,
-                "option :with should be one of :exception or MFA tuple, got: #{inspect(other)}"
       end
   end
 
-  def call(conn, _opts), do: conn
+  def call(conn, _options), do: conn
 
-  defp handle_idempotent_request(conn, key, opts) do
-    tracker = Keyword.fetch!(opts, :tracker)
+  defp handle_idempotent_request(conn, key, options) do
+    tracker = Keyword.fetch!(options, :tracker)
 
-    idempotency_key_hash = hash_idempotency_key(conn, key, opts)
-    request_payload_hash = hash_request_payload(conn, opts)
+    idempotency_key_hash = hash_idempotency_key(conn, key, options)
+    request_payload_hash = hash_request_payload(conn, options)
 
     case RequestTracker.track(tracker, idempotency_key_hash, request_payload_hash) do
       {:processing, _node_caller, _expires} ->
@@ -247,7 +282,7 @@ defmodule IdempotencyPlug do
         |> Conn.halt()
 
       {:init, idempotency_key, _expires} ->
-        update_response_before_send(conn, idempotency_key, opts)
+        update_response_before_send(conn, idempotency_key, options)
 
       {:error, error} ->
         raise "failed to track request, got: #{inspect(error)}"
@@ -262,23 +297,12 @@ defmodule IdempotencyPlug do
   @spec idempotency_key(Conn.t(), term()) :: term()
   def idempotency_key(_conn, key), do: key
 
-  defp hash_idempotency_key(conn, key, opts) do
+  defp hash_idempotency_key(conn, key, options) do
     key = {key, conn.path_info}
+    {mod, fun, args} = Keyword.fetch!(options, :idempotency_key)
+    processed_key = apply(mod, fun, [conn, key | args])
 
-    processed_key =
-      case Keyword.get(opts, :idempotency_key, {__MODULE__, :idempotency_key}) do
-        {mod, fun} ->
-          apply(mod, fun, [conn, key])
-
-        {mod, fun, args} ->
-          apply(mod, fun, [conn, key | args])
-
-        other ->
-          raise ArgumentError,
-                "option :idempotency_key must be a MFA tuple, got: #{inspect(other)}"
-      end
-
-    hash(:idempotency_key, processed_key, opts)
+    hash(:idempotency_key, processed_key, options)
   end
 
   @doc """
@@ -294,29 +318,17 @@ defmodule IdempotencyPlug do
     |> Enum.sort()
   end
 
-  defp hash_request_payload(conn, opts) do
-    payload =
-      case Keyword.get(opts, :request_payload, {__MODULE__, :request_payload}) do
-        {mod, fun} ->
-          apply(mod, fun, [conn])
+  defp hash_request_payload(conn, options) do
+    {mod, fun, args} = Keyword.fetch!(options, :request_payload)
+    payload = apply(mod, fun, [conn | args])
 
-        {mod, fun, args} ->
-          apply(mod, fun, [conn | args])
-
-        other ->
-          raise ArgumentError,
-                "option :request_payload must be a MFA tuple, got: #{inspect(other)}"
-      end
-
-    hash(:request_payload, payload, opts)
+    hash(:request_payload, payload, options)
   end
 
-  defp hash(type, value, opts) do
-    case Keyword.get(opts, :hash, {__MODULE__, :sha256_hash}) do
-      {mod, fun} -> apply(mod, fun, [type, value])
-      {mod, fun, args} -> apply(mod, fun, [type, value | args])
-      other -> raise ArgumentError, "option :hash must be a MFA tuple, got: #{inspect(other)}"
-    end
+  defp hash(type, value, options) do
+    {mod, fun, args} = Keyword.fetch!(options, :hash)
+
+    apply(mod, fun, [type, value | args])
   end
 
   @doc """
@@ -332,8 +344,8 @@ defmodule IdempotencyPlug do
     |> String.downcase()
   end
 
-  defp update_response_before_send(conn, key, opts) do
-    tracker = Keyword.fetch!(opts, :tracker)
+  defp update_response_before_send(conn, key, options) do
+    tracker = Keyword.fetch!(options, :tracker)
 
     Conn.register_before_send(conn, fn conn ->
       case RequestTracker.put_response(tracker, key, conn_to_response(conn)) do
@@ -366,10 +378,8 @@ defmodule IdempotencyPlug do
     |> Calendar.strftime("%a, %d %b %Y %X GMT")
   end
 
-  defp ensure_is_halted!(conn, error, mod, fun, args \\ []) do
-    mod
-    |> apply(fun, [conn, error | args])
-    |> case do
+  defp ensure_is_halted!(conn, error, mod, fun, args) do
+    case apply(mod, fun, [conn, error | args]) do
       %Conn{halted: true} = conn ->
         conn
 
