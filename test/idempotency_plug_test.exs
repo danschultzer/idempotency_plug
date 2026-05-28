@@ -51,6 +51,32 @@ defmodule IdempotencyPlugTest do
     end
   end
 
+  test "with invalid `:cached_headers` option", %{tracker: tracker} do
+    assert_raise ArgumentError,
+                 "option :cached_headers must be a list of header tuples, got: :invalid",
+                 fn ->
+                   IdempotencyPlug.init(tracker: tracker, cached_headers: :invalid)
+                 end
+
+    assert_raise ArgumentError,
+                 "option :cached_headers must be a list of {name, value} header tuples, got: \"invalid\"",
+                 fn ->
+                   IdempotencyPlug.init(tracker: tracker, cached_headers: ["invalid"])
+                 end
+
+    assert_raise ArgumentError,
+                 "option :cached_headers must be a list of {name, value} header tuples, got: {:invalid, \"value\"}",
+                 fn ->
+                   IdempotencyPlug.init(tracker: tracker, cached_headers: [{:invalid, "value"}])
+                 end
+
+    assert_raise ArgumentError,
+                 "option :cached_headers must be a list of {name, value} header tuples, got: {\"name\", :invalid}",
+                 fn ->
+                   IdempotencyPlug.init(tracker: tracker, cached_headers: [{"name", :invalid}])
+                 end
+  end
+
   test "with no idempotency header set", %{conn: conn, tracker: tracker} do
     error =
       assert_raise IdempotencyPlug.NoHeadersError, fn ->
@@ -195,6 +221,49 @@ defmodule IdempotencyPlugTest do
     assert conn.resp_body == "OTHER"
     assert expires(conn) == expires(other_conn)
     assert get_resp_header(conn, "x-header-key") == ["header-value"]
+  end
+
+  test "with cached response with headers set on conn", %{
+    conn: conn,
+    tracker: tracker
+  } do
+    _other_conn =
+      run_plug(conn, tracker, callback: &send_resp(&1, 201, "OTHER"))
+
+    conn =
+      conn
+      |> put_resp_header("x-header-key", "header-value")
+      |> run_plug(tracker)
+
+    assert conn.halted
+    assert conn.status == 201
+    assert conn.resp_body == "OTHER"
+    assert get_resp_header(conn, "x-header-key") == []
+  end
+
+  test "with cached response with `:cached_headers` option", %{conn: conn, tracker: tracker} do
+    _other_conn =
+      run_plug(conn, tracker,
+        callback: fn conn ->
+          conn
+          |> put_resp_header("x-header-key-1", "1")
+          |> put_resp_header("x-header-key-2", "2")
+          |> send_resp(201, "OTHER")
+        end
+      )
+
+    conn =
+      run_plug(conn, tracker,
+        cached_headers: [
+          {"x-header-key-2", "3"}
+        ]
+      )
+
+    assert conn.halted
+    assert conn.status == 201
+    assert conn.resp_body == "OTHER"
+    assert get_resp_header(conn, "x-header-key-1") == ["1"]
+    assert get_resp_header(conn, "x-header-key-2") == ["3"]
   end
 
   test "with cached response with different request payload", %{conn: conn, tracker: tracker} do

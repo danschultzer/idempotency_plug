@@ -19,23 +19,36 @@ defmodule IdempotencyPlug do
 
   ### Error handling
 
-  By default, errors are raised and handled by the `Plug.Exception` protocol:
+  Status codes are returned per
+  [section 2.7](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/#section-2.7)
+  of the IETF draft:
 
-    - Concurrent requests raises `IdempotencyPlug.ConcurrentRequestError`
-      which sets `409 Conflict` HTTP status code.
-    - Mismatch of request payload fingerprint will raise
-      `IdempotencyPlug.RequestPayloadFingerprintMismatchError` which sets
-      `422 Unprocessable Entity` HTTP status code.
-    - If the first-time request was unexpectedly terminated a
-      `IdempotencyPlug.HaltedResponseError` which sets a `500 Internal Server`
-      error is raised.
+    * `400 Bad Request` - when `Idempotency-Key` is missing
+      (`IdempotencyPlug.NoHeadersError`) or supplied more than once
+      (`IdempotencyPlug.MultipleHeadersError`).
 
-  Setting `:with` option with an MFA will catch and pass the error to the MFA.
+    * `409 Conflict` - when a request with the same `Idempotency-Key` is still
+      being processed (`IdempotencyPlug.ConcurrentRequestError`).
+
+    * `422 Unprocessable Content` - when the `Idempotency-Key` is reused with
+      a different payload or URI
+      (`IdempotencyPlug.RequestPayloadFingerprintMismatchError`).
+
+  Additionally `500 Internal Server Error` is returned when the first attempt
+  was unexpectedly interrupted and never cached
+  (`IdempotencyPlug.HaltedResponseError`).
+
+  By default these errors are raised and rendered by the `Plug.Exception`
+  protocol. Section 2.7 suggests `application/problem+json` response bodies
+  ([RFC 9457](https://www.rfc-editor.org/info/rfc9457/)). The `:with` option
+  can be used to format responses that way, see the example below.
 
   ### Cached responses
 
-  Cached responses returns an `Expires` header in the response. See
-  `IdempotencyPlug.RequestTracker` for more on expiration.
+  Cached responses use the original status, body, and headers. Any response
+  headers already set on the conn by upstream plugs are dropped. An `Expires`
+  header is added on top. See `IdempotencyPlug.RequestTracker` for more on
+  expiration.
 
   ### Authenticated requests
 
@@ -47,6 +60,16 @@ defmodule IdempotencyPlug do
         idempotency_key: {__MODULE__, :scope_idempotency_key}
 
       def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
+
+  ### `Idempotent-Replayed` header
+
+  Stripe uses an `Idempotent-Replayed` response header to indicate that a
+  response is a replay of a cached response. This can be added to cached
+  responses with the `:cached_headers` option:
+
+      plug IdempotencyPlug,
+        tracker: MyAppWeb.RequestTracker,
+        cached_headers: [{"idempotent-replayed", "true"}]
 
   ## Options
 
@@ -69,6 +92,9 @@ defmodule IdempotencyPlug do
       - `{mod, fun, args}` - calls the MFA to process the conn with error, the
         connection MUST be halted.
 
+    * `:cached_headers` - a list of response `{name, value}` tuple headers to
+      add on top of the cached response.
+
   ## Examples
 
       plug IdempotencyPlug,
@@ -76,7 +102,8 @@ defmodule IdempotencyPlug do
         idempotency_key: {__MODULE__, :scope_idempotency_key},
         request_payload: {__MODULE__, :limit_request_payload},
         hash: {__MODULE__, :sha512_hash},
-        with: {__MODULE__, :handle_error}
+        with: {__MODULE__, :handle_error},
+        cached_headers: [{"idempotent-replayed", "true"}]
 
       def scope_idempotency_key(conn, key) do
         {conn.assigns.user.id, key}
@@ -96,7 +123,12 @@ defmodule IdempotencyPlug do
       def handle_error(conn, error) do
         conn
         |> put_status(error.plug_status)
-        |> json(%{message: error.message})
+        |> put_resp_content_type("application/problem+json")
+        |> json(%{
+          type: "https://example.com/errors/idempotency",
+          title: error.message,
+          status: error.plug_status
+        })
         |> halt()
       end
   """
@@ -180,6 +212,7 @@ defmodule IdempotencyPlug do
     |> verify_mfa_tuple!(:idempotency_key, {__MODULE__, :idempotency_key})
     |> verify_mfa_tuple!(:request_payload, {__MODULE__, :request_payload})
     |> verify_mfa_tuple!(:hash, {__MODULE__, :sha256_hash})
+    |> verify_cached_headers!()
   end
 
   defp verify_tracker!(options) do
@@ -232,6 +265,29 @@ defmodule IdempotencyPlug do
     Keyword.put(options, key, {mod, fun, args})
   end
 
+  defp verify_cached_headers!(options) do
+    options
+    |> Keyword.get(:cached_headers, [])
+    |> case do
+      list when is_list(list) ->
+        list
+
+      other ->
+        raise ArgumentError,
+              "option :cached_headers must be a list of header tuples, got: #{inspect(other)}"
+    end
+    |> Enum.each(fn
+      {key, value} when is_binary(key) and is_binary(value) ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "option :cached_headers must be a list of {name, value} header tuples, got: #{inspect(other)}"
+    end)
+
+    options
+  end
+
   @doc false
   @impl true
   def call(%{method: method} = conn, options) when method in ~w(POST PATCH) do
@@ -277,8 +333,8 @@ defmodule IdempotencyPlug do
 
       {:cache, {:ok, response}, expires} ->
         conn
+        |> put_resp(response, options)
         |> put_expires_header(expires)
-        |> set_resp(response)
         |> Conn.halt()
 
       {:init, idempotency_key, _expires} ->
@@ -359,12 +415,15 @@ defmodule IdempotencyPlug do
     Map.take(conn, [:resp_body, :resp_headers, :status])
   end
 
-  defp set_resp(conn, %{resp_body: body, resp_headers: headers, status: status}) do
-    headers
-    |> Enum.reduce(conn, fn {key, value}, conn ->
-      Conn.put_resp_header(conn, key, value)
-    end)
-    |> Conn.resp(status, body)
+  defp put_resp(conn, %{resp_body: body, resp_headers: headers, status: status}, options) do
+    headers =
+      options
+      |> Keyword.get(:cached_headers, [])
+      |> Enum.reduce(headers, fn {key, value}, headers ->
+        List.keystore(headers, key, 0, {key, value})
+      end)
+
+    Conn.resp(%{conn | resp_headers: headers}, status, body)
   end
 
   defp put_expires_header(conn, expires) do
