@@ -37,9 +37,9 @@ defmodule IdempotencyPlug.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:plug, "~> 1.14"},
       {:ecto, "~> 3.9", optional: true},
       {:ecto_sql, "~> 3.9", optional: true},
+      {:plug, "~> 1.14"},
 
       # Development and test
       {:postgrex, ">= 0.0.0", only: [:test]},

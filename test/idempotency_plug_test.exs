@@ -8,17 +8,26 @@ defmodule IdempotencyPlugTest do
   setup [:setup_tracker, :setup_request]
 
   test "with no `:tracker` option" do
-    assert_raise ArgumentError, "option :tracker must be one of PID or Atom, got: nil", fn ->
-      IdempotencyPlug.init([])
-    end
+    assert_raise ArgumentError,
+                 "option :tracker must be a GenServer.server/0 type, got: nil",
+                 fn ->
+                   IdempotencyPlug.init([])
+                 end
   end
 
   test "with invalid `:tracker` option" do
     assert_raise ArgumentError,
-                 "option :tracker must be one of PID or Atom, got: \"invalid\"",
+                 "option :tracker must be a GenServer.server/0 type, got: \"invalid\"",
                  fn ->
                    IdempotencyPlug.init(tracker: "invalid")
                  end
+  end
+
+  test "with valid `:tracker` option" do
+    IdempotencyPlug.init(tracker: Tracker)
+    IdempotencyPlug.init(tracker: {Tracker, :node@nohost})
+    IdempotencyPlug.init(tracker: {:global, :request_tracker})
+    IdempotencyPlug.init(tracker: {:via, Supervisor, {Tracker, self()}})
   end
 
   test "with invalid `:with` option", %{tracker: tracker} do

@@ -3,7 +3,7 @@ defmodule IdempotencyPlug.RequestTracker do
   A GenServer that tracks processes to ensure requests, at most, are processed
   once.
 
-  ### Storage
+  ## Storage
 
   First-time tracked request will store `{:processing, {node, pid}}` request
   state with an expiration date for the provided request ID. Once the request
@@ -11,12 +11,13 @@ defmodule IdempotencyPlug.RequestTracker do
   The response will be stored as `{:ok, data}` with an expiration date.
 
   The process for a tracked request may halt unexpectedly (e.g. due to raised
-  exception). This module will track the terminated process and store the value as
-  `{:halted, reason}`.
+  exception). This module will track the terminated process and store the value
+  as `{:halted, reason}`.
 
-  All cached responses will be removed after 24 hours.
+  By default, all cached responses will be removed after 24 hours. Configure
+  with `:cache_ttl`.
 
-  ### Lookup
+  ## Lookup
 
   For subsequent requests, the state of the first-time tracked request will be
   returned in the format of `{:cache, {:ok, data}, expires_at}`.
@@ -86,12 +87,12 @@ defmodule IdempotencyPlug.RequestTracker do
   Subsequent requests will return the request state. If the request payload
   fingerprint differs from what was stored, an error is returned.
   """
-  @spec track(atom() | pid(), binary(), binary()) ::
+  @spec track(GenServer.server(), binary(), binary()) ::
           {:error, term()}
           | {:init, binary(), DateTime.t()}
           | {:mismatch, {:fingerprint, binary()}, DateTime.t()}
-          | {:processing, {atom(), pid()}, DateTime.t()}
-          | {:cache, {:ok, any()}, DateTime.t()}
+          | {:processing, {node(), pid()}, DateTime.t()}
+          | {:cache, {:ok, term()}, DateTime.t()}
           | {:cache, {:halted, term()}, DateTime.t()}
   def track(name_or_pid, request_id, fingerprint) do
     GenServer.call(name_or_pid, {:track, request_id, fingerprint})
@@ -100,7 +101,8 @@ defmodule IdempotencyPlug.RequestTracker do
   @doc """
   Updates the state for a given request ID.
   """
-  @spec put_response(atom() | pid(), binary(), any()) :: {:ok, DateTime.t()} | {:error, term()}
+  @spec put_response(GenServer.server(), binary(), term()) ::
+          {:ok, DateTime.t()} | {:error, term()}
   def put_response(name_or_pid, request_id, response) do
     GenServer.call(name_or_pid, {:put_response, request_id, response})
   end

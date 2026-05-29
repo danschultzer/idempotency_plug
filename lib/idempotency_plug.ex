@@ -7,7 +7,7 @@ defmodule IdempotencyPlug do
   Handling of requests is based on
   https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/
 
-  ### Idempotency Key
+  ## Idempotency Key
 
   The value of the `Idempotency-Key` HTTP header is combined with the URI path
   and hashed with sha256 to produce a request ID. The first response for that
@@ -17,7 +17,7 @@ defmodule IdempotencyPlug do
   request ID and used to detect reuse of the same `Idempotency-Key` with a
   different payload.
 
-  ### Error handling
+  ## Error handling
 
   Status codes are returned per
   [section 2.7](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/#section-2.7)
@@ -43,14 +43,14 @@ defmodule IdempotencyPlug do
   ([RFC 9457](https://www.rfc-editor.org/info/rfc9457/)). The `:with` option
   can be used to format responses that way, see the example below.
 
-  ### Cached responses
+  ## Cached responses
 
   Cached responses use the original status, body, and headers. Any response
   headers already set on the conn by upstream plugs are dropped. An `Expires`
   header is added on top. See `IdempotencyPlug.RequestTracker` for more on
   expiration.
 
-  ### Authenticated requests
+  ## Authenticated requests
 
   When authenticating users, scope the key to the user via the
   `:idempotency_key` option to prevent cross-user cache hits:
@@ -61,7 +61,7 @@ defmodule IdempotencyPlug do
 
       def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
 
-  ### `Idempotent-Replayed` header
+  ## `Idempotent-Replayed` header
 
   Stripe uses an `Idempotent-Replayed` response header to indicate that a
   response is a replay of a cached response. This can be added to cached
@@ -73,7 +73,7 @@ defmodule IdempotencyPlug do
 
   ## Options
 
-    * `:tracker` - must be a name or PID for the
+    * `:tracker` - `t:GenServer.server/0` reference for the
       `IdempotencyPlug.RequestTracker` GenServer, required.
 
     * `:idempotency_key` - should be a MFA tuple callback to process
@@ -216,19 +216,20 @@ defmodule IdempotencyPlug do
   end
 
   defp verify_tracker!(options) do
-    case Keyword.get(options, :tracker) do
-      pid when is_pid(pid) ->
-        :ok
-
-      atom when is_atom(atom) and not is_nil(atom) ->
-        :ok
-
-      other ->
-        raise ArgumentError,
-              "option :tracker must be one of PID or Atom, got: #{inspect(other)}"
-    end
+    do_verify_tracker!(Keyword.get(options, :tracker))
 
     options
+  end
+
+  defp do_verify_tracker!(pid) when is_pid(pid), do: :ok
+  defp do_verify_tracker!(atom) when is_atom(atom) and not is_nil(atom), do: :ok
+  defp do_verify_tracker!({atom, node}) when is_atom(atom) and is_atom(node), do: :ok
+  defp do_verify_tracker!({:global, _term}), do: :ok
+  defp do_verify_tracker!({:via, _module, _term}), do: :ok
+
+  defp do_verify_tracker!(other) do
+    raise ArgumentError,
+          "option :tracker must be a GenServer.server/0 type, got: #{inspect(other)}"
   end
 
   defp verify_with!(options) do
