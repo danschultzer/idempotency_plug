@@ -88,14 +88,14 @@ if Code.ensure_loaded?(Ecto) do
     def setup(opts) do
       case repo(opts) do
         {:ok, repo} ->
-          check_migration(repo, IdempotentRequest)
+          ensure_table_accessible(repo, IdempotentRequest)
 
         {:error, error} ->
           {:error, error}
       end
     end
 
-    defp check_migration(repo, schema) do
+    defp ensure_table_accessible(repo, schema) do
       repo.exists?(schema)
 
       :ok

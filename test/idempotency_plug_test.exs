@@ -95,7 +95,7 @@ defmodule IdempotencyPlugTest do
       end
 
     assert Plug.Exception.status(error) == 400
-    assert error.message =~ "No idempotency key found"
+    assert error.message =~ "Expected one `Idempotency-Key` header, got none"
   end
 
   test "with too many idempotency headers set", %{conn: conn, tracker: tracker} do
@@ -107,7 +107,7 @@ defmodule IdempotencyPlugTest do
       end
 
     assert Plug.Exception.status(error) == 400
-    assert error.message =~ "Only one `Idempotency-Key` header can be sent"
+    assert error.message =~ "Expected one `Idempotency-Key` header, got multiple"
   end
 
   test "with no idempotency header set and GET header", %{conn: conn, tracker: tracker} do

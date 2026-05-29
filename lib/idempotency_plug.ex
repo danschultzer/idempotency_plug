@@ -61,7 +61,7 @@ defmodule IdempotencyPlug do
 
       def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
 
-  ## `Idempotent-Replayed` header
+  ## Replay header
 
   Stripe uses an `Idempotent-Replayed` response header to indicate that a
   response is a replay of a cached response. This can be added to cached
@@ -76,20 +76,21 @@ defmodule IdempotencyPlug do
     * `:tracker` - `t:GenServer.server/0` reference for the
       `IdempotencyPlug.RequestTracker` GenServer, required.
 
-    * `:idempotency_key` - should be a MFA tuple callback to process
-      idempotency key. Defaults to `{#{__MODULE__}, :idempotency_key}`.
+    * `:idempotency_key` - should be a MFA tuple callback (`t:mfa_tuple/0`) to
+      process idempotency key. Defaults to `{#{__MODULE__}, :idempotency_key}`.
 
-    * `:request_payload` - should be a MFA tuple callback to shape request
-      payload. Defaults to `{#{__MODULE__}, :request_payload}`.
+    * `:request_payload` - should be a MFA tuple callback (`t:mfa_tuple/0`) to
+      shape request payload. Defaults to `{#{__MODULE__}, :request_payload}`.
 
-    * `:hash` - should be a MFA tuple callback to hash an Erlang term. The
-      callback receives `(type, value)` where `type` is `:idempotency_key`
-      or `:request_payload`. Defaults to `{#{__MODULE__}, :sha256_hash}`.
+    * `:hash` - should be a MFA tuple callback (`t:mfa_tuple/0`) to hash an
+      Erlang term. The callback receives `(type, value)` where `type` is
+      `:idempotency_key` or `:request_payload`. Defaults to
+      `{#{__MODULE__}, :sha256_hash}`.
 
-    * `:with` - should be one of `:exception` or MFA tuple. Defaults to
-      `:exception`.
-      - `:exception` - raises an error.
-      - `{mod, fun, args}` - calls the MFA to process the conn with error, the
+    * `:with` - should be one of `:exception` or MFA tuple (`t:mfa_tuple/0`).
+      Defaults to `:exception`.
+      * `:exception` - raises an error.
+      * `t:mfa_tuple/0` - calls the MFA to process the conn with error, the
         connection MUST be halted.
 
     * `:cached_headers` - a list of response `{name, value}` tuple headers to
@@ -153,13 +154,14 @@ defmodule IdempotencyPlug do
   alias IdempotencyPlug.RequestTracker
   alias Plug.Conn
 
+  @type mfa_tuple :: {module(), atom(), [term()]} | {module(), atom()}
+
   defmodule NoHeadersError do
     @moduledoc """
     There's no Idempotency-Key request headers.
     """
 
-    defexception message:
-                   "No idempotency key found. You need to set the `Idempotency-Key` header for all POST and PATCH requests: 'Idempotency-Key: KEY'",
+    defexception message: "Expected one `Idempotency-Key` header, got none",
                  plug_status: :bad_request
   end
 
@@ -168,7 +170,7 @@ defmodule IdempotencyPlug do
     There are multiple Idempotency-Key request headers.
     """
 
-    defexception message: "Only one `Idempotency-Key` header can be sent",
+    defexception message: "Expected one `Idempotency-Key` header, got multiple",
                  plug_status: :bad_request
   end
 
@@ -232,18 +234,18 @@ defmodule IdempotencyPlug do
   end
 
   defp verify_tracker!(options) do
-    do_verify_tracker!(Keyword.get(options, :tracker))
+    verify_tracker_value!(Keyword.get(options, :tracker))
 
     options
   end
 
-  defp do_verify_tracker!(pid) when is_pid(pid), do: :ok
-  defp do_verify_tracker!(atom) when is_atom(atom) and not is_nil(atom), do: :ok
-  defp do_verify_tracker!({atom, node}) when is_atom(atom) and is_atom(node), do: :ok
-  defp do_verify_tracker!({:global, _term}), do: :ok
-  defp do_verify_tracker!({:via, _module, _term}), do: :ok
+  defp verify_tracker_value!(pid) when is_pid(pid), do: :ok
+  defp verify_tracker_value!(atom) when is_atom(atom) and not is_nil(atom), do: :ok
+  defp verify_tracker_value!({atom, node}) when is_atom(atom) and is_atom(node), do: :ok
+  defp verify_tracker_value!({:global, _term}), do: :ok
+  defp verify_tracker_value!({:via, _module, _term}), do: :ok
 
-  defp do_verify_tracker!(other) do
+  defp verify_tracker_value!(other) do
     raise ArgumentError,
           "option :tracker must be a GenServer.server/0 type, got: #{inspect(other)}"
   end

@@ -55,7 +55,7 @@ end
 
 All POST and PATCH requests will now be idempotent using the `Idempotency-Key` HTTP header value, storing responses with the default ETS store.
 
-### Persisted store
+## Persisted store
 
 The ETS store is not persisted, so it's not production-ready. Instead, let's change the store to use Ecto.
 
@@ -81,7 +81,7 @@ plug IdempotencyPlug,
 def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
 ```
 
-If you do not do this, you may have a security vulnerability (or conflict) where any user can access another user's cached responses when requests are identical.
+If you do not do this, you may have a data leak security vulnerability where any user can access another user's cached responses when requests are identical.
 
 ## Customize error response
 

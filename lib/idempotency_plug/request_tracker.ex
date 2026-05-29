@@ -1,11 +1,11 @@
 defmodule IdempotencyPlug.RequestTracker do
   @moduledoc """
-  A GenServer that tracks processes to ensure requests, at most, are processed
-  once.
+  A GenServer that tracks request processes to ensure each request is processed
+  at most once.
 
   ## Storage
 
-  First-time tracked request will store `{:processing, {node, pid}}` request
+  A first-time tracked request will store `{:processing, {node, pid}}` request
   state with an expiration date for the provided request ID. Once the request
   has completed, `put_response/3` must be called to update the cached response.
   The response will be stored as `{:ok, data}` with an expiration date.
@@ -25,8 +25,8 @@ defmodule IdempotencyPlug.RequestTracker do
   If the request payload fingerprint differs,
   `{:mismatch, {:fingerprint, fingerprint}, expires_at}` is returned.
 
-  If first-time request has not yet completed,
-  `{:processing, {node, pid}, expires_at}` is returned.
+  If the request is identical to a first-time request that has not yet
+  completed, `{:processing, {node, pid}, expires_at}` is returned.
 
   If the request unexpectedly terminated,
   `{:cache, {:halted, reason}, expires_at}` is returned.
@@ -66,18 +66,22 @@ defmodule IdempotencyPlug.RequestTracker do
       * Measurement: `%{monotonic_time: integer(), duration: integer()}`
       * Metadata: `%{store: atom()}`
 
-  For `:cache_miss` telemetry events, `:result` indicates whether the insert succeeded or failed.
+  For `:cache_miss` telemetry events, `:result` indicates whether the insert succeeded:
+    * `:ok`    - entry inserted successfully
+    * `:error` - store failed to insert entry
 
   For `:cache_hit` telemetry events, `:result` indicates the lookup outcome:
-    - `:processing` — entry found and the original request process is still running
-    - `:halted` — entry found but the original request crashed
-    - `:ok` — entry found with matching fingerprint
-    - `:mismatch` — entry found but the payload fingerprint differs
+    * `:processing` — entry found and the original request process is still running
+    * `:halted`     — entry found but the original request crashed
+    * `:ok`         — entry found with matching fingerprint
+    * `:mismatch`   — entry found but the payload fingerprint differs
 
   The `:reason` field carries additional context depending on `:result`:
-    - `:error` results in `:cache_miss` contains the error from the failed insert attempt
-    - `:halted` results in `:cache_hit` contains the exit reason of the original request process
-    - All other has `reason: nil`
+    * `:cache_miss` - `:error` result contains the error from the failed insert
+      attempt
+    * `:cache_hit`  - `:halted` result contains the exit reason of the original
+      request process
+    * Otherwise `:reason` is `nil`
 
   ## Examples
 
