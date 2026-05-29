@@ -1,4 +1,142 @@
 defmodule IdempotencyPlug do
+  @moduledoc """
+  Plug that handles `Idempotency-Key` HTTP headers.
+
+  A single `Idempotency-Key` HTTP header is required for POST and PATCH requests.
+
+  Handling of requests is based on
+  https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/
+
+  ### Idempotency Key
+
+  The value of the `Idempotency-Key` HTTP header is combined with the URI path
+  and hashed with sha256 to produce a request ID. The first response for that
+  request ID is stored and replayed on subsequent requests.
+
+  A separate sha256 hash of the request payload is stored alongside the
+  request ID and used to detect reuse of the same `Idempotency-Key` with a
+  different payload.
+
+  ### Error handling
+
+  Status codes are returned per
+  [section 2.7](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/#section-2.7)
+  of the IETF draft:
+
+    * `400 Bad Request` - when `Idempotency-Key` is missing
+      (`IdempotencyPlug.NoHeadersError`) or supplied more than once
+      (`IdempotencyPlug.MultipleHeadersError`).
+
+    * `409 Conflict` - when a request with the same `Idempotency-Key` is still
+      being processed (`IdempotencyPlug.ConcurrentRequestError`).
+
+    * `422 Unprocessable Content` - when the `Idempotency-Key` is reused with
+      a different payload or URI
+      (`IdempotencyPlug.RequestPayloadFingerprintMismatchError`).
+
+  Additionally `500 Internal Server Error` is returned when the first attempt
+  was unexpectedly interrupted and never cached
+  (`IdempotencyPlug.HaltedResponseError`).
+
+  By default these errors are raised and rendered by the `Plug.Exception`
+  protocol. Section 2.7 suggests `application/problem+json` response bodies
+  ([RFC 9457](https://www.rfc-editor.org/info/rfc9457/)). The `:with` option
+  can be used to format responses that way, see the example below.
+
+  ### Cached responses
+
+  Cached responses use the original status, body, and headers. Any response
+  headers already set on the conn by upstream plugs are dropped. An `Expires`
+  header is added on top. See `IdempotencyPlug.RequestTracker` for more on
+  expiration.
+
+  ### Authenticated requests
+
+  When authenticating users, scope the key to the user via the
+  `:idempotency_key` option to prevent cross-user cache hits:
+
+      plug IdempotencyPlug,
+        tracker: MyAppWeb.RequestTracker,
+        idempotency_key: {__MODULE__, :scope_idempotency_key}
+
+      def scope_idempotency_key(conn, key), do: {conn.assigns.current_user.id, key}
+
+  ### `Idempotent-Replayed` header
+
+  Stripe uses an `Idempotent-Replayed` response header to indicate that a
+  response is a replay of a cached response. This can be added to cached
+  responses with the `:cached_headers` option:
+
+      plug IdempotencyPlug,
+        tracker: MyAppWeb.RequestTracker,
+        cached_headers: [{"idempotent-replayed", "true"}]
+
+  ## Options
+
+    * `:tracker` - must be a name or PID for the
+      `IdempotencyPlug.RequestTracker` GenServer, required.
+
+    * `:idempotency_key` - should be a MFA tuple callback to process
+      idempotency key. Defaults to `{#{__MODULE__}, :idempotency_key}`.
+
+    * `:request_payload` - should be a MFA tuple callback to shape request
+      payload. Defaults to `{#{__MODULE__}, :request_payload}`.
+
+    * `:hash` - should be a MFA tuple callback to hash an Erlang term. The
+      callback receives `(type, value)` where `type` is `:idempotency_key`
+      or `:request_payload`. Defaults to `{#{__MODULE__}, :sha256_hash}`.
+
+    * `:with` - should be one of `:exception` or MFA tuple. Defaults to
+      `:exception`.
+      - `:exception` - raises an error.
+      - `{mod, fun, args}` - calls the MFA to process the conn with error, the
+        connection MUST be halted.
+
+    * `:cached_headers` - a list of response `{name, value}` tuple headers to
+      add on top of the cached response.
+
+  ## Examples
+
+      plug IdempotencyPlug,
+        tracker: IdempotencyPlug.RequestTracker,
+        idempotency_key: {__MODULE__, :scope_idempotency_key},
+        request_payload: {__MODULE__, :limit_request_payload},
+        hash: {__MODULE__, :sha512_hash},
+        with: {__MODULE__, :handle_error},
+        cached_headers: [{"idempotent-replayed", "true"}]
+
+      def scope_idempotency_key(conn, key) do
+        {conn.assigns.user.id, key}
+      end
+
+      def limit_request_payload(conn) do
+        Map.drop(conn.params, ["value"])
+      end
+
+      def sha512_hash(_type, value) do
+        :sha512
+        |> :crypto.hash(:erlang.term_to_binary(value))
+        |> Base.encode16()
+        |> String.downcase()
+      end
+
+      def handle_error(conn, error) do
+        conn
+        |> put_status(error.plug_status)
+        |> put_resp_content_type("application/problem+json")
+        |> json(%{
+          type: "https://example.com/errors/idempotency",
+          title: error.message,
+          status: error.plug_status
+        })
+        |> halt()
+      end
+  """
+  @behaviour Plug
+
+  alias IdempotencyPlug.RequestTracker
+  alias Plug.Conn
+
   defmodule NoHeadersError do
     @moduledoc """
     There's no Idempotency-Key request headers.
@@ -65,104 +203,20 @@ defmodule IdempotencyPlug do
     def actions(_), do: []
   end
 
-  @moduledoc """
-  Plug that handles `Idempotency-Key` HTTP headers.
-
-  A single `Idempotency-Key` HTTP header is required for POST and PATCH requests.
-
-  Handling of requests is based on
-  https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/
-
-  ### Idempotency Key
-
-  The value of the `Idempotency-Key` HTTP header is combined with a URI to
-  produce a unique sha256 hash for the request. This will be used to store the
-  response for first-time requests. The key is used to fetch this response in
-  all subsequent requests.
-
-  A sha256 hash of the request payload is generated and used to ensure the key
-  is not reused with a different request payload.
-
-  ### Error handling
-
-  By default, errors are raised and handled by the `Plug.Exception` protocol:
-
-    - Concurrent requests raises `IdempotencyPlug.ConcurrentRequestError`
-      which sets `409 Conflict` HTTP status code.
-    - Mismatch of request payload fingerprint will raise
-      `IdempotencyPlug.RequestPayloadFingerprintMismatchError` which sets
-      `422 Unprocessable Entity` HTTP status code.
-    - If the first-time request was unexpectedly terminated a
-      `IdempotencyPlug.HaltedResponseError` which sets a `500 Internal Server`
-      error is raised.
-
-  Setting `:with` option with an MFA will catch and pass the error to the MFA.
-
-  ### Cached responses
-
-  Cached responses returns an `Expires` header in the response. See
-  `IdempotencyPlug.RequestTracker` for more on expiration.
-
-  ## Options
-
-    * `:tracker` - must be a name or PID for the
-      `IdempotencyPlug.RequestTracker` GenServer, required.
-
-    * `:idempotency_key` - should be a MFA callback to process idempotency key.
-      Defaults to `{#{__MODULE__}, :idempotency_key}`.
-
-    * `:request_payload` - should be a MFA to parse request payload. Defaults
-      to `{#{__MODULE__}, :request_payload}`.
-
-    * `:hash` - should be a MFA to hash an Erlang term. Defaults to
-      `{#{__MODULE__}, :sha256_hash}`.
-
-    * `:with` - should be one of `:exception` or MFA. Defaults to `:exception`.
-      - `:exception` - raises an error.
-      - `{mod, fun, args}` - calls the MFA to process the conn with error, the
-        connection MUST be halted.
-
-  ## Examples
-
-      plug IdempotencyPlug,
-        tracker: IdempotencyPlug.RequestTracker,
-        idempotency_key: {__MODULE__, :scope_idempotency_key},
-        request_payload: {__MODULE__, :limit_request_payload},
-        hash: {__MODULE__, :sha512_hash},
-        with: {__MODULE__, :handle_error}
-
-      def scope_idempotency_key(conn, key) do
-        {conn.assigns.user.id, key}
-      end
-
-      def limit_request_payload(conn) do
-        Map.drop(conn.params, ["value"])
-      end
-
-      def sha512_hash(_key, value) do
-        :sha512
-        |> :crypto.hash(:erlang.term_to_binary(value))
-        |> Base.encode16()
-        |> String.downcase()
-      end
-
-      def handle_error(conn, error) do
-        conn
-        |> put_status(error.plug_status)
-        |> json(%{message: error.message})
-        |> halt()
-      end
-  """
-  @behaviour Plug
-
-  alias Plug.Conn
-
-  alias IdempotencyPlug.RequestTracker
-
   @doc false
   @impl true
-  def init(opts) do
-    case Keyword.get(opts, :tracker) do
+  def init(options) do
+    options
+    |> verify_tracker!()
+    |> verify_with!()
+    |> verify_mfa_tuple!(:idempotency_key, {__MODULE__, :idempotency_key})
+    |> verify_mfa_tuple!(:request_payload, {__MODULE__, :request_payload})
+    |> verify_mfa_tuple!(:hash, {__MODULE__, :sha256_hash})
+    |> verify_cached_headers!()
+  end
+
+  defp verify_tracker!(options) do
+    case Keyword.get(options, :tracker) do
       pid when is_pid(pid) ->
         :ok
 
@@ -174,14 +228,71 @@ defmodule IdempotencyPlug do
               "option :tracker must be one of PID or Atom, got: #{inspect(other)}"
     end
 
-    opts
+    options
+  end
+
+  defp verify_with!(options) do
+    case Keyword.get(options, :with, :exception) do
+      :exception ->
+        Keyword.put(options, :with, :exception)
+
+      {mod, fun} ->
+        Keyword.put(options, :with, {mod, fun, []})
+
+      {mod, fun, args} ->
+        Keyword.put(options, :with, {mod, fun, args})
+
+      other ->
+        raise ArgumentError,
+              "option :with should be one of :exception or MFA tuple, got: #{inspect(other)}"
+    end
+  end
+
+  defp verify_mfa_tuple!(options, key, default) do
+    {mod, fun, args} =
+      case Keyword.get(options, key, default) do
+        {mod, fun} ->
+          {mod, fun, []}
+
+        {mod, fun, args} ->
+          {mod, fun, args}
+
+        other ->
+          raise ArgumentError,
+                "option #{inspect(key)} must be a MFA tuple, got: #{inspect(other)}"
+      end
+
+    Keyword.put(options, key, {mod, fun, args})
+  end
+
+  defp verify_cached_headers!(options) do
+    options
+    |> Keyword.get(:cached_headers, [])
+    |> case do
+      list when is_list(list) ->
+        list
+
+      other ->
+        raise ArgumentError,
+              "option :cached_headers must be a list of header tuples, got: #{inspect(other)}"
+    end
+    |> Enum.each(fn
+      {key, value} when is_binary(key) and is_binary(value) ->
+        :ok
+
+      other ->
+        raise ArgumentError,
+              "option :cached_headers must be a list of {name, value} header tuples, got: #{inspect(other)}"
+    end)
+
+    options
   end
 
   @doc false
   @impl true
-  def call(%{method: method} = conn, opts) when method in ~w(POST PATCH) do
+  def call(%{method: method} = conn, options) when method in ~w(POST PATCH) do
     case Conn.get_req_header(conn, "idempotency-key") do
-      [key] -> handle_idempotent_request(conn, key, opts)
+      [key] -> handle_idempotent_request(conn, key, options)
       [_ | _] -> raise MultipleHeadersError
       [] -> raise NoHeadersError
     end
@@ -193,30 +304,22 @@ defmodule IdempotencyPlug do
       RequestPayloadFingerprintMismatchError,
       HaltedResponseError
     ] ->
-      case Keyword.get(opts, :with, :exception) do
+      case Keyword.fetch!(options, :with) do
         :exception ->
           reraise error, __STACKTRACE__
 
-        {mod, fun} ->
-          ensure_is_halted!(conn, error, mod, fun)
-
         {mod, fun, args} ->
           ensure_is_halted!(conn, error, mod, fun, args)
-
-        other ->
-          # credo:disable-for-next-line Credo.Check.Warning.RaiseInsideRescue
-          raise ArgumentError,
-                "option :with should be one of :exception or MFA, got: #{inspect(other)}"
       end
   end
 
-  def call(conn, _opts), do: conn
+  def call(conn, _options), do: conn
 
-  defp handle_idempotent_request(conn, key, opts) do
-    tracker = Keyword.fetch!(opts, :tracker)
+  defp handle_idempotent_request(conn, key, options) do
+    tracker = Keyword.fetch!(options, :tracker)
 
-    idempotency_key_hash = hash_idempotency_key(conn, key, opts)
-    request_payload_hash = hash_request_payload(conn, opts)
+    idempotency_key_hash = hash_idempotency_key(conn, key, options)
+    request_payload_hash = hash_request_payload(conn, options)
 
     case RequestTracker.track(tracker, idempotency_key_hash, request_payload_hash) do
       {:processing, _node_caller, _expires} ->
@@ -230,89 +333,75 @@ defmodule IdempotencyPlug do
 
       {:cache, {:ok, response}, expires} ->
         conn
+        |> put_resp(response, options)
         |> put_expires_header(expires)
-        |> set_resp(response)
         |> Conn.halt()
 
       {:init, idempotency_key, _expires} ->
-        update_response_before_send(conn, idempotency_key, opts)
+        update_response_before_send(conn, idempotency_key, options)
 
       {:error, error} ->
-        raise "failed to track request, got: #{error}"
+        raise "failed to track request, got: #{inspect(error)}"
     end
   end
 
   @doc """
-  Returns the key as-is.
+  Default `:idempotency_key` callback.
+
+  Returns the key unchanged.
   """
+  @spec idempotency_key(Conn.t(), term()) :: term()
   def idempotency_key(_conn, key), do: key
 
-  defp hash_idempotency_key(conn, key, opts) do
+  defp hash_idempotency_key(conn, key, options) do
     key = {key, conn.path_info}
+    {mod, fun, args} = Keyword.fetch!(options, :idempotency_key)
+    processed_key = apply(mod, fun, [conn, key | args])
 
-    processed_key =
-      case Keyword.get(opts, :idempotency_key, {__MODULE__, :idempotency_key}) do
-        {mod, fun} ->
-          apply(mod, fun, [conn, key])
-
-        {mod, fun, args} ->
-          apply(mod, fun, [conn, key | args])
-
-        other ->
-          raise ArgumentError, "option :idempotency_key must be a MFA, got: #{inspect(other)}"
-      end
-
-    hash(:idempotency_key, processed_key, opts)
+    hash(:idempotency_key, processed_key, options)
   end
 
   @doc """
-  Sorts the request params in a deterministic order.
+  Default `:request_payload` callback.
+
+  Returns request params as a sorted list so the resulting hash is
+  deterministic.
   """
+  @spec request_payload(Conn.t()) :: [{binary(), term()}]
   def request_payload(conn) do
-    # Maps are not guaranteed to be ordered so we'll sort it here
     conn.params
     |> Map.to_list()
     |> Enum.sort()
   end
 
-  defp hash_request_payload(conn, opts) do
-    payload =
-      case Keyword.get(opts, :request_payload, {__MODULE__, :request_payload}) do
-        {mod, fun} ->
-          apply(mod, fun, [conn])
+  defp hash_request_payload(conn, options) do
+    {mod, fun, args} = Keyword.fetch!(options, :request_payload)
+    payload = apply(mod, fun, [conn | args])
 
-        {mod, fun, args} ->
-          apply(mod, fun, [conn | args])
-
-        other ->
-          raise ArgumentError,
-                "option :request_payload must be a MFA tuple, got: #{inspect(other)}"
-      end
-
-    hash(:request_payload, payload, opts)
+    hash(:request_payload, payload, options)
   end
 
-  defp hash(key, value, opts) do
-    case Keyword.get(opts, :hash, {__MODULE__, :sha256_hash}) do
-      {mod, fun} -> apply(mod, fun, [key, value])
-      {mod, fun, args} -> apply(mod, fun, [key, value | args])
-      other -> raise ArgumentError, "option :hash must be a MFA tuple, got: #{inspect(other)}"
-    end
+  defp hash(type, value, options) do
+    {mod, fun, args} = Keyword.fetch!(options, :hash)
+
+    apply(mod, fun, [type, value | args])
   end
 
   @doc """
-  Encodes the value from an Erlang term to a binary and generates a sha256 hash
-  from it.
+  Default `:hash` callback.
+
+  Returns a hex encoded sha256 hash of `value`. `type` is ignored.
   """
-  def sha256_hash(_key, value) do
+  @spec sha256_hash(:idempotency_key | :request_payload, term()) :: binary()
+  def sha256_hash(_type, value) do
     :sha256
     |> :crypto.hash(:erlang.term_to_binary(value))
     |> Base.encode16()
     |> String.downcase()
   end
 
-  defp update_response_before_send(conn, key, opts) do
-    tracker = Keyword.fetch!(opts, :tracker)
+  defp update_response_before_send(conn, key, options) do
+    tracker = Keyword.fetch!(options, :tracker)
 
     Conn.register_before_send(conn, fn conn ->
       case RequestTracker.put_response(tracker, key, conn_to_response(conn)) do
@@ -326,27 +415,30 @@ defmodule IdempotencyPlug do
     Map.take(conn, [:resp_body, :resp_headers, :status])
   end
 
-  defp set_resp(conn, %{resp_body: body, resp_headers: headers, status: status}) do
-    headers
-    |> Enum.reduce(conn, fn {key, value}, conn ->
-      Conn.put_resp_header(conn, key, value)
-    end)
-    |> Conn.resp(status, body)
+  defp put_resp(conn, %{resp_body: body, resp_headers: headers, status: status}, options) do
+    headers =
+      options
+      |> Keyword.get(:cached_headers, [])
+      |> Enum.reduce(headers, fn {key, value}, headers ->
+        List.keystore(headers, key, 0, {key, value})
+      end)
+
+    Conn.resp(%{conn | resp_headers: headers}, status, body)
   end
 
   defp put_expires_header(conn, expires) do
-    expires =
-      expires
-      |> DateTime.shift_zone!("Etc/UTC")
-      |> Calendar.strftime("%a, %-d %b %Y %X GMT")
-
-    Conn.put_resp_header(conn, "expires", expires)
+    Conn.put_resp_header(conn, "expires", __imf_fixdate__(expires))
   end
 
-  defp ensure_is_halted!(conn, error, mod, fun, args \\ []) do
-    mod
-    |> apply(fun, [conn, error | args])
-    |> case do
+  @doc false
+  def __imf_fixdate__(datetime) do
+    datetime
+    |> DateTime.shift_zone!("Etc/UTC")
+    |> Calendar.strftime("%a, %d %b %Y %X GMT")
+  end
+
+  defp ensure_is_halted!(conn, error, mod, fun, args) do
+    case apply(mod, fun, [conn, error | args]) do
       %Conn{halted: true} = conn ->
         conn
 

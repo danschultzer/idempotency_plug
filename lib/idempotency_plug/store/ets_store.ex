@@ -28,7 +28,7 @@ defmodule IdempotencyPlug.ETSStore do
   def setup(opts) do
     case table(opts) do
       {:ok, table} ->
-        :ets.new(table, [:named_table, :ordered_set, :private])
+        :ets.new(table, [:named_table, :set, :private])
 
         :ok
 

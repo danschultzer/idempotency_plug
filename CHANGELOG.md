@@ -2,7 +2,17 @@
 
 Requires Elixir 1.15 or higher.
 
+### Bug fixes
+
 - Prevent decoding of unsafe data in `IdempotencyPlug.EctoStore`
+- `IdempotencyPlug.call/2` now formats store error reasons with `inspect/1` to prevent serialization failure when reason is an error struct
+- `Expires` response header now uses RFC 9110 IMF-fixdate with zero-padded day
+
+### Changes
+
+- `IdempotencyPlug.ETSStore` now uses `:set` instead of `:ordered_set` for faster lookups
+- Cached responses now use the original response headers exactly, dropping any headers set by upstream plugs
+- Support `:cached_headers` option to set custom headers like `Idempotent-Replayed` for cached responses
 
 ## v0.2.1 (2023-04-28)
 

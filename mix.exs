@@ -38,7 +38,6 @@ defmodule IdempotencyPlug.MixProject do
   defp deps do
     [
       {:plug, "~> 1.14"},
-      {:jason, "~> 1.2"},
       {:ecto, "~> 3.9", optional: true},
       {:ecto_sql, "~> 3.9", optional: true},
 
@@ -80,6 +79,13 @@ defmodule IdempotencyPlug.MixProject do
           IdempotencyPlug.EctoStore,
           IdempotencyPlug.ETSStore,
           IdempotencyPlug.Store
+        ],
+        Errors: [
+          IdempotencyPlug.ConcurrentRequestError,
+          IdempotencyPlug.HaltedResponseError,
+          IdempotencyPlug.MultipleHeadersError,
+          IdempotencyPlug.NoHeadersError,
+          IdempotencyPlug.RequestPayloadFingerprintMismatchError
         ]
       ]
     ]

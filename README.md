@@ -3,13 +3,9 @@
 [![Github CI](https://github.com/danschultzer/idempotency_plug/workflows/CI/badge.svg)](https://github.com/danschultzer/idempotency_plug/actions?query=workflow%3ACI)
 [![hex.pm](https://img.shields.io/hexpm/v/idempotency_plug.svg)](https://hex.pm/packages/idempotency_plug)
 
-<!-- MDOC !-->
-
 Plug that makes POST and PATCH requests idempotent using `Idempotency-Key` HTTP header.
 
 Follows the [IETF Idempotency-Key HTTP Header Field specification draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/).
-
-<!-- MDOC !-->
 
 ## Installation
 
@@ -121,8 +117,6 @@ setup :setup_with_idempotency_key
 ```
 
 This ensures that all the tests succeed by generating a UUID for all requests.
-
-<!-- MDOC !-->
 
 ## LICENSE
 
