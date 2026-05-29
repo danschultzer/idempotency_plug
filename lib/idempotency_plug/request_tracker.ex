@@ -42,6 +42,43 @@ defmodule IdempotencyPlug.RequestTracker do
     * `:store` - the cache store module to use to store the cache objects.
       Defaults to `{IdempotencyPlug.ETSStore, [table: #{__MODULE__}]}`.
 
+  ## Telemetry events
+
+  The following events are emitted by the tracker:
+
+    * `[:idempotency_plug, :request_tracker, :cache_miss]` - dispatched when a request was not found in the cache
+      * Measurement: `%{system_time: integer()}`
+      * Metadata: `%{request_id: binary(), fingerprint: binary(), store: atom(), expires_at: DateTime.t() | nil, result: :ok | :error, reason: term() | nil}`
+
+    * `[:idempotency_plug, :request_tracker, :cache_hit]` - dispatched when a request was found in the cache
+      * Measurement: `%{system_time: integer()}`
+      * Metadata: `%{request_id: binary(), fingerprint: binary(), store: atom(), expires_at: DateTime.t(), result: :processing | :halted | :ok | :mismatch, reason: term() | nil}`
+
+    * `[:idempotency_plug, :request_tracker, :prune, :start]` - dispatched before the cache is pruned
+      * Measurement: `%{monotonic_time: integer(), system_time: integer()}`
+      * Metadata: `%{store: atom()}`
+
+    * `[:idempotency_plug, :request_tracker, :prune, :exception]` - dispatched on exceptions during cache pruning
+      * Measurement: `%{monotonic_time: integer(), duration: integer()}`
+      * Metadata: `%{store: atom(), kind: :throw | :error | :exit, reason: term(), stacktrace: list()}`
+
+    * `[:idempotency_plug, :request_tracker, :prune, :stop]` - dispatched after successfully pruning the cache
+      * Measurement: `%{monotonic_time: integer(), duration: integer()}`
+      * Metadata: `%{store: atom()}`
+
+  For `:cache_miss` telemetry events, `:result` indicates whether the insert succeeded or failed.
+
+  For `:cache_hit` telemetry events, `:result` indicates the lookup outcome:
+    - `:processing` — entry found and the original request process is still running
+    - `:halted` — entry found but the original request crashed
+    - `:ok` — entry found with matching fingerprint
+    - `:mismatch` — entry found but the payload fingerprint differs
+
+  The `:reason` field carries additional context depending on `:result`:
+    - `:error` results in `:cache_miss` contains the error from the failed insert attempt
+    - `:halted` results in `:cache_hit` contains the exit reason of the original request process
+    - All other has `reason: nil`
+
   ## Examples
 
       children = [
@@ -86,6 +123,9 @@ defmodule IdempotencyPlug.RequestTracker do
   This function will return `{:init, key, expires_at}` for first-time requests.
   Subsequent requests will return the request state. If the request payload
   fingerprint differs from what was stored, an error is returned.
+
+  Emits `:cache_hit` and `:cache_miss` telemetry events. See the module
+  documentation for details.
   """
   @spec track(GenServer.server(), binary(), binary()) ::
           {:error, term()}
@@ -135,6 +175,16 @@ defmodule IdempotencyPlug.RequestTracker do
   def handle_call({:track, request_id, fingerprint}, {caller, _}, state) do
     {store, store_opts} = fetch_store(state.options)
 
+    metadata =
+      %{
+        request_id: request_id,
+        fingerprint: fingerprint,
+        store: store,
+        expires_at: nil,
+        result: nil,
+        reason: nil
+      }
+
     case store.lookup(request_id, store_opts) do
       :not_found ->
         data = {:processing, {Node.self(), caller}}
@@ -142,22 +192,36 @@ defmodule IdempotencyPlug.RequestTracker do
 
         case store.insert(request_id, data, fingerprint, expires_at, store_opts) do
           :ok ->
+            execute_telemetry(:cache_miss, %{metadata | expires_at: expires_at, result: :ok})
+
             {:reply, {:init, request_id, expires_at}, put_monitored(state, request_id, caller)}
 
           {:error, reason} ->
+            execute_telemetry(:cache_miss, %{metadata | result: :error, reason: reason})
+
             {:reply, {:error, reason}, state}
         end
 
       {{:processing, node_caller}, ^fingerprint, expires} ->
+        execute_telemetry(:cache_hit, %{metadata | expires_at: expires, result: :processing})
+
         {:reply, {:processing, node_caller, expires}, state}
 
       {{:halted, reason}, ^fingerprint, expires} ->
+        metadata = %{metadata | expires_at: expires, result: :halted, reason: reason}
+
+        execute_telemetry(:cache_hit, metadata)
+
         {:reply, {:cache, {:halted, reason}, expires}, state}
 
       {{:ok, response}, ^fingerprint, expires} ->
+        execute_telemetry(:cache_hit, %{metadata | expires_at: expires, result: :ok})
+
         {:reply, {:cache, {:ok, response}, expires}, state}
 
       {_res, other_fingerprint, expires} ->
+        execute_telemetry(:cache_hit, %{metadata | expires_at: expires, result: :mismatch})
+
         {:reply, {:mismatch, {:fingerprint, other_fingerprint}, expires}, state}
     end
   end
@@ -172,6 +236,14 @@ defmodule IdempotencyPlug.RequestTracker do
       :ok -> {:reply, {:ok, expires_at}, state}
       {:error, reason} -> {:reply, {:error, reason}, state}
     end
+  end
+
+  defp execute_telemetry(event, metadata) do
+    :telemetry.execute(
+      [:idempotency_plug, :request_tracker, event],
+      %{system_time: System.system_time()},
+      metadata
+    )
   end
 
   defp put_monitored(state, request_id, caller) do
@@ -203,7 +275,11 @@ defmodule IdempotencyPlug.RequestTracker do
   def handle_info(:prune, state) do
     {store, store_opts} = fetch_store(state.options)
 
-    store.prune(store_opts)
+    metadata = %{store: store}
+
+    :telemetry.span([:idempotency_plug, :request_tracker, :prune], metadata, fn ->
+      {store.prune(store_opts), metadata}
+    end)
 
     Process.send_after(self(), :prune, Keyword.fetch!(state.options, :prune))
 
