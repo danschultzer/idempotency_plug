@@ -6,6 +6,22 @@ if Code.ensure_loaded?(Ecto) do
     A migration file should be generated with
     `mix idempotency_plug.ecto.gen.migration`.
 
+    ## Performance considerations
+
+    For most workloads no tuning is needed — POST/PATCH traffic is rarely
+    high enough for the table to become a bottleneck, and there are likely
+    several downstream writes happening in the same request.
+
+    However, in high-write database workloads, WAL pressure may become a
+    bottleneck. With Postgres this can be mitigated by setting the table to
+    UNLOGGED to skip WAL entirely:
+
+        ALTER TABLE idempotency_plug_requests SET UNLOGGED
+
+    Unclean shutdowns are rare, but UNLOGGED is still only appropriate when
+    losing the idempotency cache during recovery is acceptable. Not
+    recommended for payments or other critical cases.
+
     ## Examples
 
         defmodule MyApp.Application do
