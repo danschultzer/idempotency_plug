@@ -2,7 +2,7 @@ defmodule IdempotencyPlug.MixProject do
   use Mix.Project
 
   @source_url "https://github.com/danschultzer/idempotency_plug"
-  @version "0.2.1"
+  @version "0.2.2"
 
   def project do
     [

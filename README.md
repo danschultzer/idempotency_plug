@@ -14,7 +14,7 @@ Add `idempotency_plug` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:idempotency_plug, "~> 0.2"}
+    {:idempotency_plug, "~> 0.2.2"}
   ]
 end
 ```
