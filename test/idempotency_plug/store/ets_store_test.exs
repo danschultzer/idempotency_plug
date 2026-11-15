@@ -12,14 +12,14 @@ defmodule IdempotencyPlug.ETSStoreTest do
   @updated_data {:halted, :terminated}
   @fingerprint sha256_hash(:request_payload, %{"a" => 1})
 
-  test "setup" do
+  test "setup/1" do
     assert ETSStore.setup(@options) == :ok
 
     assert ETSStore.setup([]) ==
-             {:error, ":table must be specified in options for IdempotencyPlug.ETSStore"}
+             {:error, "expected :table in options for IdempotencyPlug.ETSStore"}
   end
 
-  test "inserts, looks up, and updates" do
+  test "insert/5, lookup/2, update/4" do
     :ok = ETSStore.setup(@options)
 
     assert ETSStore.lookup(@request_id, @options) == :not_found
@@ -43,7 +43,7 @@ defmodule IdempotencyPlug.ETSStoreTest do
              {@updated_data, @fingerprint, updated_expires_at}
   end
 
-  test "prunes" do
+  test "prune/1" do
     :ok = ETSStore.setup(@options)
 
     expired = DateTime.add(DateTime.utc_now(), -1, :second)

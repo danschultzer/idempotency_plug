@@ -1,7 +1,6 @@
 # IdempotencyPlug
 
-[![Github CI](https://github.com/danschultzer/idempotency_plug/workflows/CI/badge.svg)](https://github.com/danschultzer/idempotency_plug/actions?query=workflow%3ACI)
-[![hex.pm](https://img.shields.io/hexpm/v/idempotency_plug.svg)](https://hex.pm/packages/idempotency_plug)
+[![hex.pm](https://img.shields.io/hexpm/v/idempotency_plug.svg)](https://hex.pm/packages/idempotency_plug) [![GitHub CI](https://github.com/danschultzer/idempotency_plug/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/danschultzer/idempotency_plug/actions?query=workflow%3ACI)
 
 Plug that makes POST and PATCH requests idempotent using `Idempotency-Key` HTTP header.
 
@@ -95,7 +94,7 @@ plug IdempotencyPlug,
 def handle_error(conn, error) do
   conn
   |> put_status(Plug.Exception.status(error))
-  |> json(%{error: error.message})
+  |> json(%{error: Exception.message(error)})
   |> halt()
 end
 ```

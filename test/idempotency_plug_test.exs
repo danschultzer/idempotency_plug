@@ -3,13 +3,14 @@ defmodule IdempotencyPlugTest do
 
   import Plug.Conn
 
+  alias __MODULE__.FakeStore
   alias IdempotencyPlug.RequestTracker
 
   setup [:setup_tracker, :setup_request]
 
   test "with no `:tracker` option" do
     assert_raise ArgumentError,
-                 "option :tracker must be a GenServer.server/0 type, got: nil",
+                 "expected :tracker to be a GenServer.server/0 type, got: nil",
                  fn ->
                    IdempotencyPlug.init([])
                  end
@@ -17,7 +18,7 @@ defmodule IdempotencyPlugTest do
 
   test "with invalid `:tracker` option" do
     assert_raise ArgumentError,
-                 "option :tracker must be a GenServer.server/0 type, got: \"invalid\"",
+                 "expected :tracker to be a GenServer.server/0 type, got: \"invalid\"",
                  fn ->
                    IdempotencyPlug.init(tracker: "invalid")
                  end
@@ -32,7 +33,7 @@ defmodule IdempotencyPlugTest do
 
   test "with invalid `:with` option", %{tracker: tracker} do
     assert_raise ArgumentError,
-                 "option :with should be one of :exception or MFA tuple, got: :invalid",
+                 "expected :with to be one of :exception or MFA tuple, got: :invalid",
                  fn ->
                    IdempotencyPlug.init(tracker: tracker, with: :invalid)
                  end
@@ -40,7 +41,7 @@ defmodule IdempotencyPlugTest do
 
   test "with invalid `:idempotency_key` option", %{tracker: tracker} do
     assert_raise ArgumentError,
-                 "option :idempotency_key must be a MFA tuple, got: :invalid",
+                 "expected :idempotency_key to be a MFA tuple, got: :invalid",
                  fn ->
                    IdempotencyPlug.init(tracker: tracker, idempotency_key: :invalid)
                  end
@@ -48,39 +49,39 @@ defmodule IdempotencyPlugTest do
 
   test "with invalid `:request_payload` option", %{tracker: tracker} do
     assert_raise ArgumentError,
-                 "option :request_payload must be a MFA tuple, got: :invalid",
+                 "expected :request_payload to be a MFA tuple, got: :invalid",
                  fn ->
                    IdempotencyPlug.init(tracker: tracker, request_payload: :invalid)
                  end
   end
 
   test "with invalid `:hash` option", %{tracker: tracker} do
-    assert_raise ArgumentError, "option :hash must be a MFA tuple, got: :invalid", fn ->
+    assert_raise ArgumentError, "expected :hash to be a MFA tuple, got: :invalid", fn ->
       IdempotencyPlug.init(tracker: tracker, hash: :invalid)
     end
   end
 
   test "with invalid `:cached_headers` option", %{tracker: tracker} do
     assert_raise ArgumentError,
-                 "option :cached_headers must be a list of header tuples, got: :invalid",
+                 "expected :cached_headers to be a list of header tuples, got: :invalid",
                  fn ->
                    IdempotencyPlug.init(tracker: tracker, cached_headers: :invalid)
                  end
 
     assert_raise ArgumentError,
-                 "option :cached_headers must be a list of {name, value} header tuples, got: \"invalid\"",
+                 "expected :cached_headers to be a list of {name, value} header tuples, got: \"invalid\"",
                  fn ->
                    IdempotencyPlug.init(tracker: tracker, cached_headers: ["invalid"])
                  end
 
     assert_raise ArgumentError,
-                 "option :cached_headers must be a list of {name, value} header tuples, got: {:invalid, \"value\"}",
+                 "expected :cached_headers to be a list of {name, value} header tuples, got: {:invalid, \"value\"}",
                  fn ->
                    IdempotencyPlug.init(tracker: tracker, cached_headers: [{:invalid, "value"}])
                  end
 
     assert_raise ArgumentError,
-                 "option :cached_headers must be a list of {name, value} header tuples, got: {\"name\", :invalid}",
+                 "expected :cached_headers to be a list of {name, value} header tuples, got: {\"name\", :invalid}",
                  fn ->
                    IdempotencyPlug.init(tracker: tracker, cached_headers: [{"name", :invalid}])
                  end
@@ -95,7 +96,7 @@ defmodule IdempotencyPlugTest do
       end
 
     assert Plug.Exception.status(error) == 400
-    assert error.message =~ "Expected one `Idempotency-Key` header, got none"
+    assert Exception.message(error) =~ "expected one `Idempotency-Key` header, got none"
   end
 
   test "with too many idempotency headers set", %{conn: conn, tracker: tracker} do
@@ -107,7 +108,7 @@ defmodule IdempotencyPlugTest do
       end
 
     assert Plug.Exception.status(error) == 400
-    assert error.message =~ "Expected one `Idempotency-Key` header, got multiple"
+    assert Exception.message(error) =~ "expected one `Idempotency-Key` header, got multiple"
   end
 
   test "with no idempotency header set and GET header", %{conn: conn, tracker: tracker} do
@@ -122,38 +123,36 @@ defmodule IdempotencyPlugTest do
     refute expires(conn)
   end
 
-  defmodule InsertErrorStore do
-    @moduledoc false
-    @behaviour IdempotencyPlug.Store
-
-    @impl true
-    def setup(_opts), do: :ok
-
-    @impl true
-    def lookup(_id, _opts), do: :not_found
-
-    @impl true
-    def insert(_id, _data, _fp, _expires, _opts), do: {:error, %RuntimeError{message: "boom"}}
-
-    @impl true
-    def update(_id, _data, _expires, _opts), do: :ok
-
-    @impl true
-    def prune(_opts), do: :ok
-  end
-
-  @tag request_tracker_opts: [store: {InsertErrorStore, []}]
+  @tag request_tracker_opts: [
+         store: {FakeStore, [insert: {:error, %RuntimeError{message: "boom"}}]}
+       ]
   test "with store insert error", %{conn: conn, tracker: tracker} do
     ref = attach_track_telemetry_events([:exception])
 
     assert_raise RuntimeError,
-                 ~r/failed to track request, got: %RuntimeError{message: \"boom\"}/,
+                 ~r/failed to track request: %RuntimeError{message: \"boom\"}/,
                  fn ->
                    run_plug(conn, tracker)
                  end
 
     {_measurements, metadata} = assert_track_telemetry_event(ref, :exception)
     assert %RuntimeError{} = metadata.reason
+  end
+
+  @tag request_tracker_opts: [
+         store: {FakeStore, [update: {:error, %RuntimeError{message: "boom"}}]}
+       ]
+  test "with no cached response with store update error", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:start, :stop])
+
+    assert_raise RuntimeError,
+                 ~r/failed to put response in cache store: %RuntimeError{message: \"boom\"}/,
+                 fn ->
+                   run_plug(conn, tracker)
+                 end
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :stop)
+    assert Map.has_key?(metadata.conn.private, :before_send)
   end
 
   test "with no cached response", %{conn: conn, tracker: tracker} do
@@ -205,8 +204,8 @@ defmodule IdempotencyPlugTest do
 
     assert Plug.Exception.status(error) == 409
 
-    assert error.message =~
-             "A request with the same `Idempotency-Key` is currently being processed"
+    assert Exception.message(error) =~
+             "a request with the same `Idempotency-Key` is currently being processed"
 
     send(task.pid, :continue)
     Task.await(task)
@@ -230,8 +229,8 @@ defmodule IdempotencyPlugTest do
 
     assert Plug.Exception.status(error) == 500
 
-    assert error.message =~
-             "The original request was interrupted and can't be recovered as it's in an unknown state"
+    assert Exception.message(error) =~
+             "the original request was interrupted and can't be recovered as it's in an unknown state"
 
     {_measurements, metadata} = assert_track_telemetry_event(ref, :exception)
     assert %IdempotencyPlug.HaltedResponseError{} = metadata.reason
@@ -321,8 +320,8 @@ defmodule IdempotencyPlugTest do
 
     assert Plug.Exception.status(error) == 422
 
-    assert error.message =~
-             "This `Idempotency-Key` can't be reused with a different payload or URI"
+    assert Exception.message(error) =~
+             "this `Idempotency-Key` can't be reused with a different payload or URI"
 
     {_measurements, metadata} = assert_track_telemetry_event(ref, :exception)
     assert %IdempotencyPlug.RequestPayloadFingerprintMismatchError{} = metadata.reason
@@ -343,7 +342,7 @@ defmodule IdempotencyPlugTest do
 
   test "with invalid `:idempotency_key`", %{conn: conn, tracker: tracker} do
     assert_raise ArgumentError,
-                 "option :idempotency_key must be a MFA tuple, got: :invalid",
+                 "expected :idempotency_key to be a MFA tuple, got: :invalid",
                  fn ->
                    run_plug(conn, tracker, idempotency_key: :invalid)
                  end
@@ -439,13 +438,13 @@ defmodule IdempotencyPlugTest do
 
     assert Plug.Exception.status(error) == 422
 
-    assert error.message =~
-             "This `Idempotency-Key` can't be reused with a different payload or URI"
+    assert Exception.message(error) =~
+             "this `Idempotency-Key` can't be reused with a different payload or URI"
   end
 
   def handle_error(conn, error, :arg1) do
     conn
-    |> resp(error.plug_status, error.message)
+    |> resp(error.plug_status, Exception.message(error))
     |> halt()
   end
 
@@ -465,10 +464,10 @@ defmodule IdempotencyPlugTest do
     assert resp_conn.status == 422
 
     assert resp_conn.resp_body ==
-             "This `Idempotency-Key` can't be reused with a different payload or URI"
+             "this `Idempotency-Key` can't be reused with a different payload or URI"
 
     assert_raise ArgumentError,
-                 ~r/option :with MUST return a halted conn, got: %Plug.Conn{/,
+                 ~r/expected :with to return a halted conn, got: %Plug.Conn{/,
                  fn ->
                    run_plug(conn, tracker, with: {__MODULE__, :handle_error_unhalted})
                  end
@@ -536,4 +535,24 @@ defmodule IdempotencyPlugTest do
   defp other_request_payload(conn), do: %{conn | params: %{"other_key" => "1"}}
 
   defp other_request_path(conn), do: %{conn | path_info: ["other", "path"]}
+
+  defmodule FakeStore do
+    @moduledoc false
+    @behaviour IdempotencyPlug.Store
+
+    @impl true
+    def setup(_opts), do: :ok
+
+    @impl true
+    def lookup(_id, _opts), do: :not_found
+
+    @impl true
+    def insert(_id, _data, _fp, _expires, opts), do: Keyword.get(opts, :insert, :ok)
+
+    @impl true
+    def update(_id, _data, _expires, opts), do: Keyword.get(opts, :update, :ok)
+
+    @impl true
+    def prune(_opts), do: :ok
+  end
 end

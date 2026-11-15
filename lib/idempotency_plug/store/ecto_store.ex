@@ -102,7 +102,8 @@ if Code.ensure_loaded?(Ecto) do
     rescue
       _error ->
         {:error,
-         "The table #{schema.__schema__(:source)} is not accessible. Did you generate the Ecto migration with `mix idempotency_plug.ecto.gen.migration`?"}
+         "the table #{schema.__schema__(:source)} is not accessible; " <>
+           "did you generate the Ecto migration with `mix idempotency_plug.ecto.gen.migration`?"}
     end
 
     @impl true
@@ -157,7 +158,7 @@ if Code.ensure_loaded?(Ecto) do
     defp repo(opts) do
       case Keyword.fetch(opts, :repo) do
         {:ok, repo} -> {:ok, repo}
-        :error -> {:error, ":repo must be specified in options for #{inspect(__MODULE__)}"}
+        :error -> {:error, "expected :repo in options for #{inspect(__MODULE__)}"}
       end
     end
 

@@ -40,8 +40,9 @@ defmodule IdempotencyPlug do
 
   By default these errors are raised and rendered by the `Plug.Exception`
   protocol. Section 2.7 suggests `application/problem+json` response bodies
-  ([RFC 9457](https://www.rfc-editor.org/info/rfc9457/)). The `:with` option
-  can be used to format responses that way, see the example below.
+  ([RFC 9457](https://www.rfc-editor.org/info/rfc9457/)) or HTTP Header Link.
+  The `:with` option can be used to format responses both ways, see the
+  examples below.
 
   ## Cached responses
 
@@ -76,14 +77,14 @@ defmodule IdempotencyPlug do
     * `:tracker` - `t:GenServer.server/0` reference for the
       `IdempotencyPlug.RequestTracker` GenServer, required.
 
-    * `:idempotency_key` - should be a MFA tuple callback (`t:mfa_tuple/0`) to
-      process idempotency key. Defaults to `{#{__MODULE__}, :idempotency_key}`.
+    * `:idempotency_key` - should be a MFA tuple (`t:mfa_tuple/0`) to process
+      idempotency key. Defaults to `{#{__MODULE__}, :idempotency_key}`.
 
-    * `:request_payload` - should be a MFA tuple callback (`t:mfa_tuple/0`) to
-      shape request payload. Defaults to `{#{__MODULE__}, :request_payload}`.
+    * `:request_payload` - should be a MFA tuple (`t:mfa_tuple/0`) to shape
+      request payload. Defaults to `{#{__MODULE__}, :request_payload}`.
 
-    * `:hash` - should be a MFA tuple callback (`t:mfa_tuple/0`) to hash an
-      Erlang term. The callback receives `(type, value)` where `type` is
+    * `:hash` - should be a MFA tuple (`t:mfa_tuple/0`) to hash an Erlang term.
+      The MFA callback receives `(type, value)` where `type` is
       `:idempotency_key` or `:request_payload`. Defaults to
       `{#{__MODULE__}, :sha256_hash}`.
 
@@ -143,9 +144,12 @@ defmodule IdempotencyPlug do
         |> put_resp_content_type("application/problem+json")
         |> json(%{
           type: "https://example.com/errors/idempotency",
-          title: error.message,
+          title: "Idempotency error",
+          detail: Exception.message(error),
           status: error.plug_status
         })
+        # Or as a Link header:
+        # |> put_resp_header("link", "<https://example.com/errors/idempotency>; rel="describedby"; type="text/html"")
         |> halt()
       end
   """
@@ -161,7 +165,7 @@ defmodule IdempotencyPlug do
     There's no Idempotency-Key request headers.
     """
 
-    defexception message: "Expected one `Idempotency-Key` header, got none",
+    defexception message: "expected one `Idempotency-Key` header, got none",
                  plug_status: :bad_request
   end
 
@@ -170,7 +174,7 @@ defmodule IdempotencyPlug do
     There are multiple Idempotency-Key request headers.
     """
 
-    defexception message: "Expected one `Idempotency-Key` header, got multiple",
+    defexception message: "expected one `Idempotency-Key` header, got multiple",
                  plug_status: :bad_request
   end
 
@@ -180,7 +184,7 @@ defmodule IdempotencyPlug do
     """
 
     defexception message:
-                   "A request with the same `Idempotency-Key` is currently being processed",
+                   "a request with the same `Idempotency-Key` is currently being processed",
                  plug_status: :conflict
   end
 
@@ -191,7 +195,9 @@ defmodule IdempotencyPlug do
 
     defexception [
       :fingerprint,
-      message: "This `Idempotency-Key` can't be reused with a different payload or URI",
+      message: "this `Idempotency-Key` can't be reused with a different payload or URI",
+      # Change the below once Plug 1.19.1 is required as it correct the
+      # `:unprocessable_entity` to `:unprocessable_content`.
       plug_status: :unprocessable_entity
     ]
   end
@@ -204,7 +210,7 @@ defmodule IdempotencyPlug do
     defexception [
       :reason,
       message:
-        "The original request was interrupted and can't be recovered as it's in an unknown state",
+        "the original request was interrupted and can't be recovered as it's in an unknown state",
       plug_status: :internal_server_error
     ]
   end
@@ -247,7 +253,7 @@ defmodule IdempotencyPlug do
 
   defp verify_tracker_value!(other) do
     raise ArgumentError,
-          "option :tracker must be a GenServer.server/0 type, got: #{inspect(other)}"
+          "expected :tracker to be a GenServer.server/0 type, got: #{inspect(other)}"
   end
 
   defp verify_with!(options) do
@@ -263,7 +269,7 @@ defmodule IdempotencyPlug do
 
       other ->
         raise ArgumentError,
-              "option :with should be one of :exception or MFA tuple, got: #{inspect(other)}"
+              "expected :with to be one of :exception or MFA tuple, got: #{inspect(other)}"
     end
   end
 
@@ -278,7 +284,7 @@ defmodule IdempotencyPlug do
 
         other ->
           raise ArgumentError,
-                "option #{inspect(key)} must be a MFA tuple, got: #{inspect(other)}"
+                "expected #{inspect(key)} to be a MFA tuple, got: #{inspect(other)}"
       end
 
     Keyword.put(options, key, {mod, fun, args})
@@ -293,7 +299,7 @@ defmodule IdempotencyPlug do
 
       other ->
         raise ArgumentError,
-              "option :cached_headers must be a list of header tuples, got: #{inspect(other)}"
+              "expected :cached_headers to be a list of header tuples, got: #{inspect(other)}"
     end
     |> Enum.each(fn
       {key, value} when is_binary(key) and is_binary(value) ->
@@ -301,7 +307,7 @@ defmodule IdempotencyPlug do
 
       other ->
         raise ArgumentError,
-              "option :cached_headers must be a list of {name, value} header tuples, got: #{inspect(other)}"
+              "expected :cached_headers to be a list of {name, value} header tuples, got: #{inspect(other)}"
     end)
 
     options
@@ -373,7 +379,7 @@ defmodule IdempotencyPlug do
           {conn, %{metadata | conn: conn}}
 
         {:error, error} ->
-          raise "failed to track request, got: #{inspect(error)}"
+          raise RuntimeError, "failed to track request: #{inspect(error)}"
       end
     end)
   end
@@ -438,8 +444,11 @@ defmodule IdempotencyPlug do
 
     Conn.register_before_send(conn, fn conn ->
       case RequestTracker.put_response(tracker, key, conn_to_response(conn)) do
-        {:ok, expires} -> put_expires_header(conn, expires)
-        {:error, error} -> raise "failed to put response in cache store, got: #{inspect(error)}"
+        {:ok, expires} ->
+          put_expires_header(conn, expires)
+
+        {:error, error} ->
+          raise RuntimeError, "failed to put response in cache store: #{inspect(error)}"
       end
     end)
   end
@@ -476,7 +485,7 @@ defmodule IdempotencyPlug do
         conn
 
       other ->
-        raise ArgumentError, "option :with MUST return a halted conn, got: #{inspect(other)}"
+        raise ArgumentError, "expected :with to return a halted conn, got: #{inspect(other)}"
     end
   end
 end

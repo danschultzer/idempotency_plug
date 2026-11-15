@@ -4,19 +4,8 @@ defmodule IdempotencyPlug.EctoStoreTest do
   import IdempotencyPlug, only: [sha256_hash: 2]
   import ExUnit.CaptureIO
 
+  alias __MODULE__.{TestRepo, UnmigratedTestRepo}
   alias IdempotencyPlug.EctoStore
-
-  defmodule TestRepo do
-    use Ecto.Repo,
-      otp_app: :idempotency_plug,
-      adapter: Ecto.Adapters.Postgres
-  end
-
-  defmodule UnmigratedTestRepo do
-    use Ecto.Repo,
-      otp_app: :idempotency_plug,
-      adapter: Ecto.Adapters.Postgres
-  end
 
   setup_all :setup_ecto_repo
   setup :setup_ecto_sandbox
@@ -31,7 +20,7 @@ defmodule IdempotencyPlug.EctoStoreTest do
   describe "setup/1" do
     test "when `:repo` option is missing" do
       assert EctoStore.setup([]) ==
-               {:error, ":repo must be specified in options for IdempotencyPlug.EctoStore"}
+               {:error, "expected :repo in options for IdempotencyPlug.EctoStore"}
     end
 
     test "when not migrated" do
@@ -52,7 +41,7 @@ defmodule IdempotencyPlug.EctoStoreTest do
 
       assert EctoStore.setup(repo: UnmigratedTestRepo) ==
                {:error,
-                "The table idempotency_plug_requests is not accessible. Did you generate the Ecto migration with `mix idempotency_plug.ecto.gen.migration`?"}
+                "the table idempotency_plug_requests is not accessible; did you generate the Ecto migration with `mix idempotency_plug.ecto.gen.migration`?"}
     end
 
     test "when migrated" do
@@ -60,7 +49,7 @@ defmodule IdempotencyPlug.EctoStoreTest do
     end
   end
 
-  test "inserts, looks up, and updates" do
+  test "insert/5, lookup/2, update/4" do
     :ok = EctoStore.setup(@options)
 
     assert EctoStore.lookup(@request_id, @options) == :not_found
@@ -84,7 +73,7 @@ defmodule IdempotencyPlug.EctoStoreTest do
              {@updated_data, @fingerprint, updated_expires_at}
   end
 
-  test "prevents decoding of unsafe data" do
+  test "lookup/2 when unsafe data is stored" do
     :ok = EctoStore.setup(@options)
 
     unsafe_data = <<131, 119, 8, "tjenixen">>
@@ -101,7 +90,7 @@ defmodule IdempotencyPlug.EctoStoreTest do
     end
   end
 
-  test "prunes" do
+  test "prune/1" do
     :ok = EctoStore.setup(@options)
 
     expired = DateTime.add(DateTime.utc_now(), -1, :second)
@@ -168,5 +157,17 @@ defmodule IdempotencyPlug.EctoStoreTest do
     on_exit(fn -> Ecto.Adapters.SQL.Sandbox.stop_owner(pid) end)
 
     :ok
+  end
+
+  defmodule TestRepo do
+    use Ecto.Repo,
+      otp_app: :idempotency_plug,
+      adapter: Ecto.Adapters.Postgres
+  end
+
+  defmodule UnmigratedTestRepo do
+    use Ecto.Repo,
+      otp_app: :idempotency_plug,
+      adapter: Ecto.Adapters.Postgres
   end
 end
