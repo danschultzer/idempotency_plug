@@ -1,3 +1,13 @@
+## Unreleased
+
+**This is a breaking release.**
+
+Plug 1.19.1 or higher required.
+
+### Changed
+
+- `IdempotencyPlug.RequestPayloadFingerprintMismatchError` now uses `:unprocessable_content` instead of `:unprocessable_entity` plug status
+
 ## v0.2.2 (2026-05-29)
 
 Requires Elixir 1.15 or higher.
