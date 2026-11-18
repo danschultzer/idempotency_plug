@@ -4,9 +4,18 @@
 
 Plug 1.19.1 or higher required.
 
+`Idempotency-Key` headers must now be double quoted as per the [IETF Idempotency-Key HTTP Header Field specification draft](https://datatracker.ietf.org/doc/draft-ietf-httpapi-idempotency-key-header/):
+
+```
+Idempotency-Key: "your-idempotency-key"
+```
+
 ### Changed
 
 - `IdempotencyPlug.RequestPayloadFingerprintMismatchError` now uses `:unprocessable_content` instead of `:unprocessable_entity` plug status
+- `IdempotencyPlug.call/2` now requires double quoted idempotency key values
+- `IdempotencyPlug.call/2` now parses the `Idempotency-Key` request header as an Item Structured Header Field String instead of accepting any value
+- `IdempotencyPlug.call/2` now raises `IdempotencyPlug.InvalidHeaderError` for invalid values
 
 ## v0.2.2 (2026-05-29)
 

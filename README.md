@@ -54,6 +54,12 @@ end
 
 All POST and PATCH requests will now be idempotent using the `Idempotency-Key` HTTP header value, storing responses with the default ETS store.
 
+The `Idempotency-Key` must be an [Item Structured Header Field String](https://www.rfc-editor.org/info/rfc9651/#section-3.3.3) which means it has to be double quoted like this:
+
+```
+Idempotency-Key: "your-idempotency-key"
+```
+
 ## Persisted store
 
 The ETS store is not persisted, so it's not production-ready. Instead, let's change the store to use Ecto.
@@ -105,7 +111,7 @@ For your controller tests, you may want to add this helper to set up the idempot
 
 ```elixir
 def setup_with_idempotency_key(%{conn: conn}) do
-  conn = Plug.Conn.put_req_header(conn, "idempotency-key", Ecto.UUID.generate())
+  conn = Plug.Conn.put_req_header(conn, "idempotency-key", "\"#{Ecto.UUID.generate()}\"")
 
   {:ok, conn: conn}
 end

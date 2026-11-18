@@ -17,6 +17,13 @@ defmodule IdempotencyPlug do
   request ID and used to detect reuse of the same `Idempotency-Key` with a
   different payload.
 
+  The `Idempotency-Key` HTTP header must be an
+  [Item Structured Header Field String](https://www.rfc-editor.org/info/rfc9651/#section-3.3.3).
+  Invalid values raise `IdempotencyPlug.InvalidHeaderError`. The header value
+  must be double quoted:
+
+      Idempotency-Key: "your-idempotency-key"
+
   ## Error handling
 
   Status codes are returned per
@@ -24,8 +31,9 @@ defmodule IdempotencyPlug do
   of the IETF draft:
 
     * `400 Bad Request` - when `Idempotency-Key` is missing
-      (`IdempotencyPlug.NoHeadersError`) or supplied more than once
-      (`IdempotencyPlug.MultipleHeadersError`).
+      (`IdempotencyPlug.NoHeadersError`), supplied more than once
+      (`IdempotencyPlug.MultipleHeadersError`), or is not a valid String
+      (`IdempotencyPlug.InvalidHeaderError`).
 
     * `409 Conflict` - when a request with the same `Idempotency-Key` is still
       being processed (`IdempotencyPlug.ConcurrentRequestError`).
@@ -178,6 +186,15 @@ defmodule IdempotencyPlug do
                  plug_status: :bad_request
   end
 
+  defmodule InvalidHeaderError do
+    @moduledoc """
+    The `Idempotency-Key` request header value is not valid.
+    """
+
+    defexception message: "expected valid `Idempotency-Key` header, got an invalid value",
+                 plug_status: :bad_request
+  end
+
   defmodule ConcurrentRequestError do
     @moduledoc """
     There's another request currently being processed for this ID.
@@ -217,6 +234,7 @@ defmodule IdempotencyPlug do
     for: [
       NoHeadersError,
       MultipleHeadersError,
+      InvalidHeaderError,
       ConcurrentRequestError,
       RequestPayloadFingerprintMismatchError,
       HaltedResponseError
@@ -314,7 +332,10 @@ defmodule IdempotencyPlug do
   @doc false
   @impl true
   def call(%{method: method} = conn, options) when method in ~w(POST PATCH) do
-    case Conn.get_req_header(conn, "idempotency-key") do
+    conn
+    |> Conn.get_req_header("idempotency-key")
+    |> parse_structured_field_values()
+    |> case do
       [key] -> handle_idempotent_request(conn, key, options)
       [_ | _] -> raise MultipleHeadersError
       [] -> raise NoHeadersError
@@ -323,6 +344,7 @@ defmodule IdempotencyPlug do
     error in [
       NoHeadersError,
       MultipleHeadersError,
+      InvalidHeaderError,
       ConcurrentRequestError,
       RequestPayloadFingerprintMismatchError,
       HaltedResponseError
@@ -337,6 +359,75 @@ defmodule IdempotencyPlug do
   end
 
   def call(conn, _options), do: conn
+
+  defp parse_structured_field_values(values) do
+    Enum.map(values, &parse_structured_field_string/1)
+  end
+
+  defp parse_structured_field_string(value, string \\ nil)
+
+  defp parse_structured_field_string(<<>>, nil) do
+    raise InvalidHeaderError, "expected String, got empty value"
+  end
+
+  defp parse_structured_field_string(<<>>, string), do: string
+
+  @ows [?\s, ?\t]
+
+  defp parse_structured_field_string(<<byte, rest::binary>>, string) when byte in @ows do
+    parse_structured_field_string(rest, string)
+  end
+
+  # Parameters are ignored and not validated
+  defp parse_structured_field_string(<<?;, _parameters::binary>>, string) do
+    parse_structured_field_string(<<>>, string)
+  end
+
+  defp parse_structured_field_string(<<?", rest::binary>>, nil) do
+    parse_structured_field_string_quote(rest, "")
+  end
+
+  defp parse_structured_field_string(<<?,, _rest::binary>>, _string) do
+    raise InvalidHeaderError, "expected String, got List with comma separator"
+  end
+
+  defp parse_structured_field_string(<<byte, _rest::binary>>, nil) do
+    raise InvalidHeaderError,
+          "expected String to start with double-quote, got: #{inspect(<<byte>>)}"
+  end
+
+  defp parse_structured_field_string(<<byte, _rest::binary>>, _string) do
+    raise InvalidHeaderError,
+          "expected String to not have trailing characters, got: #{inspect(<<byte>>)}"
+  end
+
+  defp parse_structured_field_string_quote(<<?\\, ?", rest::binary>>, string) do
+    parse_structured_field_string_quote(rest, string <> <<?">>)
+  end
+
+  defp parse_structured_field_string_quote(<<?\\, ?\\, rest::binary>>, string) do
+    parse_structured_field_string_quote(rest, string <> <<?\\>>)
+  end
+
+  defp parse_structured_field_string_quote(<<?", rest::binary>>, string) do
+    parse_structured_field_string(rest, string)
+  end
+
+  defp parse_structured_field_string_quote(<<>>, _string) do
+    raise InvalidHeaderError, "expected String to end with double-quote"
+  end
+
+  @vchar_sp Enum.to_list(?\s..?~) -- [?\\]
+
+  defp parse_structured_field_string_quote(<<byte, rest::binary>>, string)
+       when byte in @vchar_sp do
+    parse_structured_field_string_quote(rest, string <> <<byte>>)
+  end
+
+  defp parse_structured_field_string_quote(<<byte, _rest::binary>>, _string) do
+    raise InvalidHeaderError,
+          "expected String to not contain invalid characters, got: #{inspect(<<byte>>)}"
+  end
 
   defp handle_idempotent_request(conn, key, options) do
     tracker = Keyword.fetch!(options, :tracker)

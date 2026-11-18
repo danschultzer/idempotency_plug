@@ -87,6 +87,176 @@ defmodule IdempotencyPlugTest do
                  end
   end
 
+  test "with empty idempotency header value", %{conn: conn, tracker: tracker} do
+    error =
+      assert_raise IdempotencyPlug.InvalidHeaderError, fn ->
+        conn
+        |> put_req_header("idempotency-key", "")
+        |> run_plug(tracker)
+      end
+
+    assert Plug.Exception.status(error) == 400
+    assert Exception.message(error) == "expected String, got empty value"
+
+    error =
+      assert_raise IdempotencyPlug.InvalidHeaderError, fn ->
+        conn
+        |> put_req_header("idempotency-key", " \t")
+        |> run_plug(tracker)
+      end
+
+    assert Plug.Exception.status(error) == 400
+    assert Exception.message(error) == "expected String, got empty value"
+  end
+
+  test "with idempotency header value with no double quotes", %{conn: conn, tracker: tracker} do
+    error =
+      assert_raise IdempotencyPlug.InvalidHeaderError, fn ->
+        conn
+        |> put_req_header("idempotency-key", "key value")
+        |> run_plug(tracker)
+      end
+
+    assert Plug.Exception.status(error) == 400
+    assert Exception.message(error) == "expected String to start with double-quote, got: \"k\""
+  end
+
+  test "with idempotency header value with unterminated quotes", %{conn: conn, tracker: tracker} do
+    error =
+      assert_raise IdempotencyPlug.InvalidHeaderError, fn ->
+        conn
+        |> put_req_header("idempotency-key", "\"key value")
+        |> run_plug(tracker)
+      end
+
+    assert Plug.Exception.status(error) == 400
+    assert Exception.message(error) == "expected String to end with double-quote"
+  end
+
+  test "with quoted empty idempotency header value", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:start, :stop])
+
+    conn
+    |> put_req_header("idempotency-key", "\"\"")
+    |> run_plug(tracker)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :start)
+    assert metadata.idempotency_key == ""
+  end
+
+  test "with quoted whitespace idempotency header value", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:start, :stop])
+
+    conn
+    |> put_req_header("idempotency-key", "\" \"")
+    |> run_plug(tracker)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :start)
+    assert metadata.idempotency_key == " "
+  end
+
+  test "with quoted idempotency header value with escaped characters that must not be escaped", %{
+    conn: conn,
+    tracker: tracker
+  } do
+    error =
+      assert_raise IdempotencyPlug.InvalidHeaderError, fn ->
+        conn
+        |> put_req_header("idempotency-key", "\"\\key value\"")
+        |> run_plug(tracker)
+      end
+
+    assert Plug.Exception.status(error) == 400
+
+    assert Exception.message(error) ==
+             "expected String to not contain invalid characters, got: \"\\\\\""
+  end
+
+  test "with quoted idempotency header value with escaped \" and \\ characters", %{
+    conn: conn,
+    tracker: tracker
+  } do
+    ref = attach_track_telemetry_events([:start, :stop])
+
+    conn
+    |> put_req_header("idempotency-key", "\"key \\\" \\\\value\"")
+    |> run_plug(tracker)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :start)
+    assert metadata.idempotency_key == "key \" \\value"
+  end
+
+  test "with quoted idempotency header value with whitespace", %{
+    conn: conn,
+    tracker: tracker
+  } do
+    ref = attach_track_telemetry_events([:start, :stop])
+
+    conn
+    |> put_req_header("idempotency-key", " \t\"  key  value  \" \t")
+    |> run_plug(tracker)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :start)
+    assert metadata.idempotency_key == "  key  value  "
+  end
+
+  test "with quoted idempotency header value with trailing characters", %{
+    conn: conn,
+    tracker: tracker
+  } do
+    error =
+      assert_raise IdempotencyPlug.InvalidHeaderError, fn ->
+        conn
+        |> put_req_header("idempotency-key", "\"key\" x")
+        |> run_plug(tracker)
+      end
+
+    assert Plug.Exception.status(error) == 400
+
+    assert Exception.message(error) ==
+             "expected String to not have trailing characters, got: \"x\""
+  end
+
+  test "with quoted idempotency header value with empty parameters", %{
+    conn: conn,
+    tracker: tracker
+  } do
+    ref = attach_track_telemetry_events([:start, :stop])
+
+    conn
+    |> put_req_header("idempotency-key", "\"key value\";")
+    |> run_plug(tracker)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :start)
+    assert metadata.idempotency_key == "key value"
+  end
+
+  test "with quoted idempotency header value with parameters", %{conn: conn, tracker: tracker} do
+    ref = attach_track_telemetry_events([:start, :stop])
+
+    conn
+    |> put_req_header("idempotency-key", "\"key; value\"; foo=bar")
+    |> run_plug(tracker)
+
+    {_measurements, metadata} = assert_track_telemetry_event(ref, :start)
+    assert metadata.idempotency_key == "key; value"
+  end
+
+  test "with quoted idempotency header value with second quoted value", %{
+    conn: conn,
+    tracker: tracker
+  } do
+    error =
+      assert_raise IdempotencyPlug.InvalidHeaderError, fn ->
+        conn
+        |> put_req_header("idempotency-key", "\"key value 1\", \"key value 2\"")
+        |> run_plug(tracker)
+      end
+
+    assert Plug.Exception.status(error) == 400
+    assert Exception.message(error) == "expected String, got List with comma separator"
+  end
+
   test "with no idempotency header set", %{conn: conn, tracker: tracker} do
     error =
       assert_raise IdempotencyPlug.NoHeadersError, fn ->
@@ -103,7 +273,7 @@ defmodule IdempotencyPlugTest do
     error =
       assert_raise IdempotencyPlug.MultipleHeadersError, fn ->
         conn
-        |> Map.put(:req_headers, conn.req_headers ++ [{"idempotency-key", "other-key"}])
+        |> Map.put(:req_headers, conn.req_headers ++ [{"idempotency-key", "\"other-key\""}])
         |> run_plug(tracker)
       end
 
@@ -169,7 +339,7 @@ defmodule IdempotencyPlugTest do
     assert %Plug.Conn{resp_body: nil} = metadata.conn
     assert metadata.tracker == tracker
     refute Map.has_key?(metadata.conn.private, :before_send)
-    assert [metadata.idempotency_key] == get_req_header(conn, "idempotency-key")
+    assert ["\"#{metadata.idempotency_key}\""] == get_req_header(conn, "idempotency-key")
     {_measurements, metadata} = assert_track_telemetry_event(ref, :stop)
     assert Map.has_key?(metadata.conn.private, :before_send)
   end
@@ -492,7 +662,7 @@ defmodule IdempotencyPlugTest do
     conn =
       %Plug.Conn{}
       |> Plug.Adapters.Test.Conn.conn("POST", "/my/path", nil)
-      |> put_req_header("idempotency-key", "key")
+      |> put_req_header("idempotency-key", "\"key\"")
       |> Map.put(:params, %{"a" => 1, "b" => 2})
 
     %{conn: conn}
