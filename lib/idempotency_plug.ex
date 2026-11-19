@@ -196,9 +196,7 @@ defmodule IdempotencyPlug do
     defexception [
       :fingerprint,
       message: "this `Idempotency-Key` can't be reused with a different payload or URI",
-      # Change the below once Plug 1.19.1 is required as it correct the
-      # `:unprocessable_entity` to `:unprocessable_content`.
-      plug_status: :unprocessable_entity
+      plug_status: :unprocessable_content
     ]
   end
 
